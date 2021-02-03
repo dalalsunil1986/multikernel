@@ -33,6 +33,7 @@
 	#define __NEED_LIMITS_PM
 
 	#include <nanvix/servers/message.h>
+	#include <nanvix/runtime/pm/proc.h>
 	#include <nanvix/limits/pm.h>
 	#include <nanvix/ulib.h>
 	#include <posix/stdint.h>
@@ -49,6 +50,9 @@
 	#define NAME_SUCCESS 4 /**< Success acknowledgement. */
 	#define NAME_ALIVE   5 /**< Client alive.            */
 	#define NAME_FAIL    6 /**< Failure acknowledgement. */
+	#define NAME_GETPGID 7 /**< Get process group id     */
+	#define NAME_SETPGID 8 /**< Set process group id     */
+	#define NAME_SETPID  9 /**< Set process id           */
 	/**@}*/
 
 	/**
@@ -65,12 +69,13 @@
 			struct
 			{
 				char name[NANVIX_PROC_NAME_MAX]; /**< Portal name. */
-
+				nanvix_pid_t pid;                /**< Process id   */
 			} lookup;
 
 			struct
 			{
 				char name[NANVIX_PROC_NAME_MAX]; /**< Portal name. */
+				nanvix_pid_t pid;                /**< Process id   */
 			} link;
 
 			struct
@@ -87,13 +92,25 @@
 
 			struct
 			{
+				nanvix_pid_t pid;  /**< Process id       */
+				nanvix_gid_t pgid; /**< Process group id */
+			} setpgid;
+
+			struct
+			{
+				nanvix_pid_t pid;  /**< Process id */
+			} getpgid;
+
+			struct
+			{
 
 			} exit;
 
 			struct
 			{
-				int nodenum; /**< NoC node.   */
-				int errcode; /**< Error code. */
+				nanvix_proc_info_t proc_info; /**< Process info.     */
+				nanvix_gid_t gid;             /**< Process group id. */
+				int errcode;                  /**< Error code.       */
 			} ret;
 		} op;
 	};
@@ -124,7 +141,7 @@
 		/* Name too long. */
 		if ((ustrlen(name) >= (NANVIX_PROC_NAME_MAX - 1)))
 			return (-ENAMETOOLONG);
-		
+
 		return (0);
 	}
 

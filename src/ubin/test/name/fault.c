@@ -26,7 +26,7 @@
 #define __NEED_NAME_SERVICE
 #define __NEED_NAME_CLIENT
 
-#include <nanvix/runtime/pm/name.h>
+#include <nanvix/runtime/pm.h>
 #include <nanvix/sys/noc.h>
 #include <nanvix/limits.h>
 #include <nanvix/ulib.h>
@@ -42,8 +42,14 @@
 static void test_name_invalid_link(void)
 {
 	/* Link invalid names. */
-	TEST_ASSERT(nanvix_name_link(-1, "missing_name") < 0);
-	TEST_ASSERT(nanvix_name_link(1000000, "missing_name") < 0);
+	nanvix_pid_t pid;
+
+	pid = NANVIX_PID_NULL;
+	TEST_ASSERT(nanvix_name_link(pid, "missing_name") < 0);
+	
+	pid = nanvix_getpid();
+	pid = nanvix_pid_set_id(pid, -1);
+	TEST_ASSERT(nanvix_name_link(pid, "missing_name") < 0);
 }
 
 /*============================================================================*
@@ -55,17 +61,17 @@ static void test_name_invalid_link(void)
  */
 static void test_name_bad_link(void)
 {
-	int nodenum;
+	nanvix_pid_t pid;
 	char pathname[NANVIX_PROC_NAME_MAX + 1];
 
-	nodenum = knode_get_num();
+	pid = nanvix_getpid();
 
 	umemset(pathname, 1, NANVIX_PROC_NAME_MAX + 1);
 
 	/* Link invalid names. */
-	TEST_ASSERT(nanvix_name_link(nodenum, pathname) < 0);
-	TEST_ASSERT(nanvix_name_link(nodenum, NULL) < 0);
-	TEST_ASSERT(nanvix_name_link(nodenum, "") < 0);
+	TEST_ASSERT(nanvix_name_link(pid, pathname) < 0);
+	TEST_ASSERT(nanvix_name_link(pid, NULL) < 0);
+	TEST_ASSERT(nanvix_name_link(pid, "") < 0);
 }
 
 /*============================================================================*
@@ -96,12 +102,12 @@ static void test_name_invalid_unlink(void)
  */
 static void test_name_bad_unlink(void)
 {
-	int nodenum;
+	nanvix_pid_t pid;
 
-	nodenum = knode_get_num();
+	pid = nanvix_getpid();
 
 	/* Unlink missing name. */
-	TEST_ASSERT(nanvix_name_link(nodenum, "cool-name") == 0);
+	TEST_ASSERT(nanvix_name_link(pid, "cool-name") == 0);
 	TEST_ASSERT(nanvix_name_unlink("missing_name") < 0);
 	TEST_ASSERT(nanvix_name_unlink("cool-name") == 0);
 }
@@ -115,12 +121,12 @@ static void test_name_bad_unlink(void)
  */
 static void test_name_double_unlink(void)
 {
-	int nodenum;
+	nanvix_pid_t pid;
 
-	nodenum = knode_get_num();
+	pid = nanvix_getpid();
 
 	/* Unlink missing name. */
-	TEST_ASSERT(nanvix_name_link(nodenum, "cool-name") == 0);
+	TEST_ASSERT(nanvix_name_link(pid, "cool-name") == 0);
 	TEST_ASSERT(nanvix_name_unlink("cool-name") == 0);
 	TEST_ASSERT(nanvix_name_unlink("cool-name") < 0);
 }

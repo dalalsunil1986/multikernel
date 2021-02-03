@@ -34,6 +34,7 @@ SRC = $(wildcard *.c)                        \
       $(wildcard posix/libc/stdlib/malloc.c) \
       $(wildcard fs/*.c)                     \
       $(wildcard pm/sysv/*.c)                \
+      $(wildcard pm/proc/*.c)                \
       $(wildcard pm/*.c)                     \
       $(wildcard mm/*.c)                     \
       $(wildcard utils/*.c)

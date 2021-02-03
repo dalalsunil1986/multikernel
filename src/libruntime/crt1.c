@@ -62,6 +62,7 @@ extern int __main3(int argc, const char *argv[]);
 int __main2(int argc, const char *argv[])
 {
 	int nodenum;
+	nanvix_pid_t pid;
 	char pname[NANVIX_PROC_NAME_MAX];
 
 	nodenum = knode_get_num();
@@ -75,7 +76,10 @@ int __main2(int argc, const char *argv[])
 
 		__runtime_setup(SPAWN_RING_LAST);
 
+		uassert(nanvix_setpid() == 0);
+		pid = nanvix_getpid();
 		uassert(nanvix_setpname(pname) == 0);
+		uassert(nanvix_setpgid(pid, 0) == 0);
 
 		/* Spawn multiple threads simulating user processes. */
 #if __NANVIX_USES_LWMPI
@@ -108,4 +112,3 @@ int __main2(int argc, const char *argv[])
 
 	return (0);
 }
-

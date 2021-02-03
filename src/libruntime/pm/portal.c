@@ -183,9 +183,10 @@ int __nanvix_portal_cleanup(void)
  */
 int nanvix_portal_create(const char *name)
 {
-	int id;       /* Portal ID.                 */
-	int nodenum;  /* NoC node.                  */
-	int portalid; /* Underlying unnamed portal. */
+	int id;           /* Portal ID.                 */
+	int nodenum;      /* NoC node.                  */
+	int portalid;     /* Underlying unnamed portal. */
+	nanvix_pid_t pid; /* Process id.                */
 
 	/* Invalid name. */
 	if (name == NULL)
@@ -203,10 +204,14 @@ int nanvix_portal_create(const char *name)
 	if ((id = resource_alloc(&pool_portals)) < 0)
 		return (-EAGAIN);
 
-	nodenum = knode_get_num();
+	pid = nanvix_getpid();
+
+	/* Find nodenum */
+	if ((nodenum = nanvix_name_lookup2(pid)) < 0)
+		goto error0;
 
 	/* Link name. */
-	if (nanvix_name_link(nodenum, name) != 0)
+	if (nanvix_name_link(pid, name) != 0)
 		goto error0;
 
 	/* Initialize portal. */
@@ -243,9 +248,10 @@ error0:
  */
 int nanvix_portal_create2(const char *name, int port)
 {
-	int fd;       /* NoC connector. */
-	int nodenum;  /* NoC node.      */
-	int portalid; /* Portal ID.     */
+	int fd;           /* NoC connector. */
+	int nodenum;      /* NoC node.      */
+	int portalid;     /* Portal ID.     */
+	nanvix_pid_t pid; /* Process id.    */
 
 	/* Invalid name. */
 	if (name == NULL)
@@ -259,18 +265,22 @@ int nanvix_portal_create2(const char *name, int port)
 	if (!WITHIN(port, NANVIX_GENERAL_PORTS_BASE, KPORTAL_PORT_NR))
 		return (-EINVAL);
 
-	nodenum = knode_get_num();
-
 	/* Allocate portal. */
 	if ((portalid = resource_alloc(&pool_portals)) < 0)
 		return (-EAGAIN);
+
+	pid = nanvix_getpid();
+
+	/* Find nodenum */
+	if ((nodenum = nanvix_name_lookup2(pid)) < 0)
+		goto error0;
 
 	/* Creates the underlying NoC connector. */
 	if ((fd = kportal_create(nodenum, port)) < 0)
 		goto error0;
 
 	/* Link name. */
-	if (nanvix_name_link(nodenum, name) != 0)
+	if (nanvix_name_link(pid, name) != 0)
 		goto error1;
 
 	/* Initialize portal. */

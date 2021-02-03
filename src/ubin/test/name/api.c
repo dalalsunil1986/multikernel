@@ -26,7 +26,7 @@
 #define __NEED_NAME_CLIENT
 #define __NEED_NAME_SERVICE
 
-#include <nanvix/runtime/pm/name.h>
+#include <nanvix/runtime/pm.h>
 #include <nanvix/sys/noc.h>
 #include <nanvix/limits.h>
 #include <nanvix/ulib.h>
@@ -41,13 +41,13 @@
  */
 static void test_name_link_unlink(void)
 {
-	int nodenum;
+	nanvix_pid_t pid;
 	char pathname[NANVIX_PROC_NAME_MAX];
 
-	nodenum = knode_get_num();
+	pid = nanvix_getpid();
 
 	ustrcpy(pathname, "cool-name");
-	TEST_ASSERT(nanvix_name_link(nodenum, pathname) == 0);
+	TEST_ASSERT(nanvix_name_link(pid, pathname) == 0);
 	TEST_ASSERT(nanvix_name_unlink(pathname) == 0);
 }
 
@@ -60,15 +60,15 @@ static void test_name_link_unlink(void)
  */
 static void test_name_double_link(void)
 {
-	int nodenum;
+	nanvix_pid_t pid;
 	char pathname[NANVIX_PROC_NAME_MAX];
 
-	nodenum = knode_get_num();
+	pid = nanvix_getpid();
 
 	/* Link name. */
 	ustrcpy(pathname, "cool-name");
-	TEST_ASSERT(nanvix_name_link(nodenum, pathname) == 0);
-	TEST_ASSERT(nanvix_name_link(nodenum, pathname) == 0);
+	TEST_ASSERT(nanvix_name_link(pid, pathname) == 0);
+	TEST_ASSERT(nanvix_name_link(pid, pathname) == 0);
 	TEST_ASSERT(nanvix_name_unlink(pathname) == 0);
 	TEST_ASSERT(nanvix_name_unlink(pathname) == 0);
 }
@@ -82,14 +82,14 @@ static void test_name_double_link(void)
  */
 static void test_name_lookup(void)
 {
-	int nodenum;
+	nanvix_pid_t pid;
 	char pathname[NANVIX_PROC_NAME_MAX];
 
-	nodenum = knode_get_num();
+	pid = nanvix_getpid();
 
 	ustrcpy(pathname, "cool-name");
-	TEST_ASSERT(nanvix_name_link(nodenum, pathname) == 0);
-	TEST_ASSERT(nanvix_name_lookup(pathname) == nodenum);
+	TEST_ASSERT(nanvix_name_link(pid, pathname) == 0);
+	TEST_ASSERT(nanvix_name_lookup(pathname) == knode_get_num());
 	TEST_ASSERT(nanvix_name_unlink(pathname) == 0);
 }
 
@@ -102,13 +102,13 @@ static void test_name_lookup(void)
  */
 static void test_name_heartbeat(void)
 {
-	int nodenum;
+	nanvix_pid_t pid;
 	char pathname[NANVIX_PROC_NAME_MAX];
 
-	nodenum = knode_get_num();
+	pid = nanvix_getpid();
 
 	ustrcpy(pathname, "cool-name");
-	TEST_ASSERT(nanvix_name_link(nodenum, pathname) == 0);
+	TEST_ASSERT(nanvix_name_link(pid, pathname) == 0);
 	TEST_ASSERT(nanvix_name_heartbeat() == 0);
 	TEST_ASSERT(nanvix_name_unlink(pathname) == 0);
 }

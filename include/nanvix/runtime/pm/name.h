@@ -34,6 +34,8 @@
 	#include <nanvix/servers/name.h>
 
 #endif /* __NAME_SERVICE */
+	
+	#include <nanvix/runtime/pm/proc.h>
 
 	/**
 	 * @brief Initializes the Name Service client.
@@ -60,7 +62,7 @@
 	 * @returns Upon successful completion 0 is returned.
 	 * Upon failure, a negative error code is returned instead.
 	 */
-	extern int nanvix_name_link(int nodenum, const char *name);
+	extern int nanvix_name_link(nanvix_pid_t pid, const char *name);
 
 	/**
 	 * @brief Converts a name into a NoC node ID.
