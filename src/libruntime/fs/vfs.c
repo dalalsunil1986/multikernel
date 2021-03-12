@@ -47,6 +47,71 @@ static struct
 };
 
 /*============================================================================*
+ * nanvix_vfs_stat()                                                          *
+ *============================================================================*/
+
+/**
+ * @brief The do_nanvix_stat() function gets metadata about the file specified
+ * by @p filename.
+ */
+static int do_nanvix_stat(const char *filename, struct nanvix_stat *restrict buf)
+{
+	struct vfs_message msg;
+
+	/* Build message.*/
+	message_header_build(&msg.header, VFS_STAT);
+	ustrncpy(msg.op.stat.filename, filename, NANVIX_NAME_MAX);
+
+	/* Send operation. */
+	uassert(
+		nanvix_mailbox_write(
+			server.outbox,
+			&msg, sizeof(struct vfs_message)
+		) == 0
+	);
+
+	/* Receive reply. */
+	uassert(
+		kmailbox_read(
+			stdinbox_get(),
+			&msg,
+			sizeof(struct vfs_message)
+		) == sizeof(struct vfs_message)
+	);
+
+	/* Operation failed. */
+	if (msg.header.opcode == VFS_FAIL)
+		return (msg.op.ret.status);
+
+	/* write answer to buffer */
+	umemcpy(buf, &msg.op.stat.buf, sizeof(struct nanvix_stat));
+
+	return (msg.op.ret.fd);
+}
+
+/**
+ * @see do_nanvix_stat().
+ *
+ * @author Lucca Augusto
+ */
+int nanvix_vfs_stat(const char *filename, struct nanvix_stat *restrict buf)
+{
+	/* Invalid server ID. */
+	if (!server.initialized)
+		return (-EAGAIN);
+
+	/* Invalid filename. */
+	if (filename == NULL)
+		return (-EINVAL);
+
+	/* TODO: check for long filename. */
+	if (ustrlen(filename) >= NANVIX_NAME_MAX)
+		return (-ENAMETOOLONG);
+
+	return (do_nanvix_stat(filename, buf));
+}
+
+/*============================================================================*
  * nanvix_vfs_open()                                                          *
  *============================================================================*/
 
@@ -59,7 +124,7 @@ static struct
  * - O_WRONLY opens a file for write-only.
  * - O_RDWR opens a file for both read and write.
  */
-static int do_nanvix_vfs_open(const char *filename, int oflag)
+static int do_nanvix_vfs_open(const char *filename, int oflag, mode_t mode)
 {
 	struct vfs_message msg;
 
@@ -67,6 +132,7 @@ static int do_nanvix_vfs_open(const char *filename, int oflag)
 	message_header_build(&msg.header, VFS_OPEN);
 	ustrncpy(msg.op.open.filename, filename, NANVIX_NAME_MAX);
 	msg.op.open.oflag = oflag;
+	msg.op.open.mode = mode;
 
 	/* Send operation. */
 	uassert(
@@ -97,7 +163,7 @@ static int do_nanvix_vfs_open(const char *filename, int oflag)
  *
  * @author Pedro Henrique Penna
  */
-int nanvix_vfs_open(const char *filename, int oflag)
+int nanvix_vfs_open(const char *filename, int oflag, mode_t mode)
 {
 	/* Invalid server ID. */
 	if (!server.initialized)
@@ -115,7 +181,7 @@ int nanvix_vfs_open(const char *filename, int oflag)
 	if (!ACCMODE_RDONLY(oflag) && !ACCMODE_WRONLY(oflag) && !ACCMODE_RDWR(oflag))
 		return (-EINVAL);
 
-	return (do_nanvix_vfs_open(filename, oflag));
+	return (do_nanvix_vfs_open(filename, oflag, mode));
 }
 
 /*============================================================================*
@@ -176,6 +242,66 @@ int nanvix_vfs_close(int fd)
 		return (-EINVAL);
 
 	return (do_nanvix_vfs_close(fd));
+}
+
+/*============================================================================*
+ * nanvix_vfs_unlink()                                                        *
+ *============================================================================*/
+
+/**
+ * The do_nanvix_vfs_unlink() function unlinks the file referred by the
+ * file name @p filename.
+ *
+ * @author Lucca Augusto
+ */
+static int do_nanvix_vfs_unlink(const char *filename)
+{
+	struct vfs_message msg;
+
+	/* Build message.*/
+	message_header_build(&msg.header, VFS_UNLINK);
+	ustrncpy(msg.op.unlink.filename, filename, NANVIX_NAME_MAX);
+
+	/* Send operation. */
+	uassert(
+		nanvix_mailbox_write(
+			server.outbox,
+			&msg, sizeof(struct vfs_message)
+		) == 0
+	);
+
+	/* Receive reply. */
+	uassert(
+		kmailbox_read(
+			stdinbox_get(),
+			&msg,
+			sizeof(struct vfs_message)
+		) == sizeof(struct vfs_message)
+	);
+
+	/* Operation failed. */
+	if (msg.header.opcode == VFS_FAIL)
+		return (msg.op.ret.status);
+
+	return (0);
+}
+
+/**
+ * @see do_nanvix_vfs_unlink().
+ *
+ * @author Lucca Augusto
+ */
+int nanvix_vfs_unlink(const char *filename)
+{
+	/* Invalid server ID. */
+	if (!server.initialized)
+		return (-EAGAIN);
+
+	/* Invalid file name. */
+	if (filename == NULL)
+		return (-EINVAL);
+
+	return (do_nanvix_vfs_unlink(filename));
 }
 
 /*============================================================================*

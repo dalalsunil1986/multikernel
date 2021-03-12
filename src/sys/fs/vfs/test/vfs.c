@@ -66,6 +66,18 @@ static void test_api_vfs_open_close(void)
 }
 
 /**
+ * @brief API Test: Create/Unlink a File
+ */
+static void test_api_vfs_creat_unlink(void)
+{
+	int fd;
+	const char *filename = "new_file";
+
+	uassert((fd = vfs_open(CONNECTION, filename, (O_RDONLY | O_CREAT), (S_IRWXU | S_IRGRP | S_IROTH))) >= 0);
+	uassert(vfs_unlink(CONNECTION, filename) == 0);
+}
+
+/**
  * @brief API Test: Seek Read/Write Pointer of a File
  */
 static void test_api_vfs_seek(void)
@@ -109,6 +121,17 @@ static void test_api_vfs_read_write(void)
 	uassert(vfs_close(CONNECTION, fd) == 0);
 }
 
+/**
+ * @brief API Test: Get File Stats
+ */
+static void test_api_vfs_stat(void)
+{
+	struct nanvix_stat buffer;
+	const char *filename = "disk";
+
+	uassert(vfs_stat(CONNECTION, filename, &buffer) >= 0);
+}
+
 /*============================================================================*
  * Stress Tests                                                               *
  *============================================================================*/
@@ -121,10 +144,11 @@ static struct
 	void (*func)(void); /**< Test Function */
 	const char *name;   /**< Test Name     */
 } vfs_tests[] = {
-	{ test_api_vfs_open_close, "[vfs][api] open/close" },
-	{ test_api_vfs_seek,       "[vfs][api] seek      " },
-	{ test_api_vfs_read_write, "[vfs][api] read/write" },
-	{ NULL,                     NULL                   },
+	{ test_api_vfs_stat,                 "[vfs][api] stat                " },
+	{ test_api_vfs_open_close,           "[vfs][api] open/close          " },
+	{ test_api_vfs_seek,                 "[vfs][api] seek                " },
+	{ test_api_vfs_read_write,           "[vfs][api] read/write          " },
+	{ NULL,                               NULL                             },
 };
 
 /**

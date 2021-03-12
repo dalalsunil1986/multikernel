@@ -21,42 +21,24 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+#ifndef NANVIX_TYPES_VFS_H_
+#define NANVIX_TYPES_VFS_H_
 
-#include <nanvix/config.h>
-#include <nanvix/ulib.h>
-#include "../test.h"
+	#include <nanvix/servers/vfs.h>
+	#include <posix/sys/types.h>
 
-/* Import definitions. */
-extern struct test tests_vfs_api[];
-extern struct test tests_vfs_stress[];
-extern struct test tests_vfs_fault[];
-
-/**
- * @todo TODO: provide a detailed description for this function.
- */
-void test_vfs(void)
-{
-#ifdef __NANVIX_HAS_VFS_SERVER
-
-	/* Run api tests. */
-	for (int i = 0; tests_vfs_api[i].test_fn != NULL; i++)
+	/**
+	 * @brief In-Memory Inode
+	 */
+	struct inode
 	{
-		uprintf("[nanvix][test][vfs][api] %s", tests_vfs_api[i].name);
-		tests_vfs_api[i].test_fn();
-	}
+		/* Must come first. */
+		struct resource resource;
+	
+		struct d_inode data; /**< Underlying Disk Inode  */
+		dev_t dev;           /**< Underlying Device      */
+		ino_t num;           /**< Inode Number           */
+		int count;           /**< Reference count        */
+	};
 
-	/* Run fault tests. */
-	for (int i = 0; tests_vfs_fault[i].test_fn != NULL; i++)
-	{
-		uprintf("[nanvix][test][vfs][fault] %s", tests_vfs_fault[i].name);
-		tests_vfs_fault[i].test_fn();
-	}
-
-	/* Run stress tests. */
-	for (int i = 0; tests_vfs_stress[i].test_fn != NULL; i++)
-	{
-		uprintf("[nanvix][test][vfs][stress] %s", tests_vfs_stress[i].name);
-		tests_vfs_stress[i].test_fn();
-	}
-#endif
-}
+#endif /* NANVIX_TYPES_VFS_H_ */
