@@ -50,9 +50,10 @@ void message_header_sprint(char *str, message_header *h)
  * The message_header_build2() function builds a message header pointed
  * to by @p h. The opcode of the message is set to @p opcode.
  */
-void message_header_build2(
+void message_header_build3(
 	message_header *h,
 	uint8_t opcode,
+	uint8_t mailbox_port,
 	uint8_t portal_port
 )
 {
@@ -60,8 +61,21 @@ void message_header_build2(
 
 	h->source = knode_get_num();
 	h->opcode = opcode;
-	h->mailbox_port = stdinbox_get_port();
+	h->mailbox_port = mailbox_port;
 	h->portal_port = portal_port;
+}
+
+/**
+ * The message_header_build2() function builds a message header pointed
+ * to by @p h. The opcode of the message is set to @p opcode.
+ */
+void message_header_build2(
+	message_header *h,
+	uint8_t opcode,
+	uint8_t portal_port
+)
+{
+	message_header_build3(h, opcode, stdinbox_get_port(), portal_port);
 }
 
 /**

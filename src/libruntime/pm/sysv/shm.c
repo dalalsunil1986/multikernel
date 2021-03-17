@@ -39,6 +39,8 @@
 #include <posix/errno.h>
 #include <posix/fcntl.h>
 
+#define SHM_SNOOPER_LOG 0
+
 /**
  * @brief ID of snooper thread.
  */
@@ -68,6 +70,17 @@ static struct oregion
 struct resource_pool pool = {
 	oregions, NANVIX_SHM_OPEN_MAX, sizeof(struct oregion)
 };
+
+static spinlock_t lock;
+
+PRIVATE struct task_shm_inval
+{
+	ktask_t release;
+	ktask_t * write;
+	ktask_t * read;
+	struct sysv_message msg;
+	bool busy;
+} task_shm_inval;
 
 /*============================================================================*
  * __nanvix_shm_lookup_name()                                                 *
@@ -539,7 +552,6 @@ int __nanvix_shm_unlink(const char *name)
 	if ((ret = nanvix_shm_name_is_invalid(name)))
 		return (ret);
 
-
 	return (__do_nanvix_shm_unlink(name));
 }
 
@@ -821,6 +833,110 @@ int __nanvix_shm_inval(int shmid)
 }
 
 /*============================================================================*
+ * nanvix_shm_inval()                                                         *
+ *============================================================================*/
+
+/**
+ * @todo TODO: provide a long description for this function.
+ */
+PRIVATE int __nanvix_shm_inval_release(ktask_args_t * args)
+{
+	struct sysv_message * msg = &task_shm_inval.msg;
+
+	if ((args->ret = kmailbox_task_release(task_shm_inval.write)) != 0)
+		return (TASK_RET_ERROR);
+
+	if ((args->ret = kmailbox_task_release(task_shm_inval.read)) != 0)
+		return (TASK_RET_ERROR);
+
+	/* Failed to close shared memory region. */
+	args->ret = (msg->header.opcode == SYSV_SHM_FAIL) ? (msg->payload.ret.status) : (0);
+
+	spinlock_lock(&lock);
+		task_shm_inval.busy = false;
+	spinlock_unlock(&lock);
+
+	return (TASK_RET_SUCCESS);
+}
+
+/**
+ * @todo TODO: provide a detailed description for this function.
+ */
+ktask_t * __nanvix_shm_inval_task_alloc(int shmid, int inbox, int port)
+{
+	int busy;
+
+	/* Uninitialized server. */
+	if (!__nanvix_sysv_is_initialized())
+		return (NULL);
+
+	/* Invalid ID. */
+	if (!WITHIN(shmid, 0, NANVIX_SHM_MAX))
+		return (NULL);
+
+	/* Initilize name client. */
+	spinlock_lock(&lock);
+
+		busy = task_shm_inval.busy;
+
+		if (!busy)
+			task_shm_inval.busy = true;
+
+	spinlock_unlock(&lock);
+
+	if (busy)
+		return (NULL);
+
+	task_shm_inval.write = kmailbox_write_task_alloc(
+		nanvix_mailbox_get_fd(__nanvix_sysv_outbox(), true),
+		&task_shm_inval.msg,
+		sizeof(struct sysv_message)
+	);
+
+	task_shm_inval.read = kmailbox_read_task_alloc(
+		inbox, // stdinbox_get(),
+		&task_shm_inval.msg,
+		sizeof(struct sysv_message)
+	);
+
+	if (!task_shm_inval.write || !task_shm_inval.read)
+	{
+		kmailbox_task_release(task_shm_inval.write);
+		kmailbox_task_release(task_shm_inval.read);
+
+		return (NULL);
+	}
+
+	if (ktask_create(&task_shm_inval.release, __nanvix_shm_inval_release, NULL, 0) != 0)
+		return (NULL);
+
+	if (ktask_connect(task_shm_inval.write, task_shm_inval.read) != 0)
+		return (NULL);
+
+	if (ktask_connect(task_shm_inval.read, &task_shm_inval.release) != 0)
+		return (NULL);
+
+	int oshmid;
+	struct sysv_message * msg = &task_shm_inval.msg;
+
+	/* Invalid shared memory region. */
+	if ((oshmid = shm_lookup_shmid(shmid)) < 0)
+		return (NULL);
+
+	/* Bad memory region. */
+	if (oregions[oshmid].refcount == 0)
+		return (NULL);
+
+	/* Build message. */
+	message_header_build3(&msg->header, SYSV_SHM_INVAL, port, port);
+	msg->payload.shm.inval.page = oregions[oshmid].page;
+
+	KASSERT(ktask_dispatch(task_shm_inval.write) == 0);
+
+	return (&task_shm_inval.release);
+}
+
+/*============================================================================*
  * nanvix_shm_snooper()                                                       *
  *============================================================================*/
 
@@ -855,7 +971,9 @@ static void *nanvix_shm_snooper(void *args)
 			) == sizeof(struct sysv_message)
 		);
 
+#if SHM_SNOOPER_LOG 
 		uprintf("[nanvix][shm] invalidation signal received");
+#endif
 	}
 
 	return (NULL);
@@ -876,6 +994,9 @@ int __nanvix_shm_setup(void)
 		return (0);
 
 	uprintf("[nanvix][shm] connection with server established");
+
+	task_shm_inval.busy = false;
+	spinlock_init(&lock);
 
 	uassert(kthread_create(&nanvix_shm_snooper_tid, &nanvix_shm_snooper, NULL) == 0);
 

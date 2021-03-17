@@ -99,7 +99,15 @@
 	 * @returns Upons successful completion, zero is returned. Upon
 	 * failure, a negative error code is returned instead.
 	 */
-	extern ktask_t * nanvix_name_heartbeat_with_task(void);
+	extern ktask_t * nanvix_name_heartbeat_task_alloc(void);
+
+	/**
+	 * @brief Updates the timestamp of a process.
+	 *
+	 * @returns Upons successful completion, zero is returned. Upon
+	 * failure, a negative error code is returned instead.
+	 */
+	extern ktask_t * nanvix_name_lookup_task_alloc(const char *name, int inbox, int port);
 
 	/**
 	 * @brief Shutdowns the name server.

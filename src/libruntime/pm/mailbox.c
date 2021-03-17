@@ -326,6 +326,34 @@ int nanvix_mailbox_set_remote(int mbxid, int remote, int port)
 }
 
 /*============================================================================*
+ * mailbox_get_fg()                                                           *
+ *============================================================================*/
+
+int nanvix_mailbox_get_fd(int mbxid, int wronly)
+{
+	/* Invalid mailbox ID.*/
+	if (!nanvix_mailbox_is_valid(mbxid))
+		return (-EINVAL);
+
+	/* Bad mailbox. */
+	if (!resource_is_used(&mailboxes[mbxid].resource))
+		return (-EINVAL);
+
+	/* Not the owner. */
+	if (mailboxes[mbxid].owner != knode_get_num())
+		return (-EPERM);
+
+	/*  Invalid mailbox. */
+	if (wronly && !resource_is_wronly(&mailboxes[mbxid].resource))
+		return (-EINVAL);
+
+	else if (!wronly && !resource_is_rdonly(&mailboxes[mbxid].resource))
+		return (-EINVAL);
+
+	return (mailboxes[mbxid].fd);
+}
+
+/*============================================================================*
  * mailbox_write()                                                            *
  *============================================================================*/
 

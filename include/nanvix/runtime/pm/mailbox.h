@@ -53,6 +53,11 @@
 	extern int nanvix_mailbox_get(void);
 
 	/**
+	 * @brief Get named input mailbox.
+	 */
+	extern int nanvix_mailbox_get_fd(int mbxid, int wronly);
+
+	/**
 	 * @brief Creates a mailbox.
 	 *
 	 * @param name Mailbox name.

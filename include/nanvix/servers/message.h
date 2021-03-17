@@ -67,4 +67,19 @@
 		uint8_t portal_port
 	);
 
+	/**
+	 * @brief Builds a message header.
+	 *
+	 * @param h            Target message header.
+	 * @param opcode       Opcode of the message.
+	 * @param mailbox_port Port number for mailbox.
+	 * @param portal_port  Port number for portal.
+	 */
+	extern void message_header_build3(
+		message_header *h,
+		uint8_t opcode,
+		uint8_t mailbox_port,
+		uint8_t portal_port
+	);
+
 #endif /* NANVIX_SERVERS_MESSAGE_H_ */

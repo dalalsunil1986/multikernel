@@ -198,6 +198,8 @@
 	 */
 	extern int __nanvix_shm_inval(int shmid);
 
+	extern ktask_t * __nanvix_shm_inval_task_alloc(int shmid, int inbox, int port);
+
 /*============================================================================*
  * Message Queues                                                             *
  *============================================================================*/
