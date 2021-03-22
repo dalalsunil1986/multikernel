@@ -613,7 +613,7 @@ struct inode *inode_name(struct filesystem *fs, const char *name)
 	}
 
 	/* Invalid name. */
-	if (name == NULL)
+	if (name == NULL || *name == '\0')
 	{
 		curr_proc->errcode = -EINVAL;
 		return (NULL);

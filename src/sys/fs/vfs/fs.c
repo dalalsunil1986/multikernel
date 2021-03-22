@@ -513,6 +513,9 @@ int file_block_count(struct inode *ip)
 		}
 	}
 
+	brelse(blk_buf);
+	brelse(blk_buf_di);
+
 	return nr_blocks;
 }
 
@@ -550,13 +553,6 @@ static int do_stat(const char *filename, struct nanvix_stat *restrict buf)
 		rdev = inode_get_dev(ip);
 		if (bdev_open(ino_data->i_zones[0]) < 0)
 			goto error;
-	}
-
-	/* Regular file. */
-	else if (S_ISREG(ino_data->i_mode))
-	{
-		curr_proc->errcode = -ENOTSUP;
-		goto error;
 	}
 
 	/* Directory. */
@@ -617,6 +613,10 @@ int fs_stat(const char *filename, struct nanvix_stat *restrict buf)
 		f->count = 0;
 		return curr_proc->errcode;
 	}
+
+	/* free file entry */
+	f->count = 0;
+
 	return 0;
 }
 
@@ -675,7 +675,7 @@ int fs_close(int fd)
  * fs_unlink()                                                                *
  *============================================================================*/
 
-int do_unlink(const char *filename, struct inode *fip)
+int do_unlink(const char *filename)
 {
 	int ret = 0;       /* return value    */
 	struct inode *dip; /* directory inode */
@@ -696,21 +696,13 @@ int do_unlink(const char *filename, struct inode *fip)
 	if (ret < 0)
 		goto error;
 
-	/* decrement file link count */
-	inode_null(fip);
-	inode_decrease_count(fip);
-
 	inode_touch(dip);
-
 	inode_put(&fs_root, dip);
-	inode_put(&fs_root, fip);
 
 	return (0);
 
 error:
 	inode_put(&fs_root, dip);
-	inode_put(&fs_root, fip);
-
 	return ret;
 }
 
@@ -754,10 +746,12 @@ int fs_unlink(const char *filename)
 		}
 	}
 
-	if ((ret = do_unlink(filename, fip)) != 0)
+	if ((ret = do_unlink(filename)) != 0)
 		goto error;
 
-	inode_touch(fip);
+	/* decrement file link count */
+	inode_decrease_count(fip);
+
 	inode_put(&fs_root, fip);
 
 	return (0);
