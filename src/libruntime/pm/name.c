@@ -75,14 +75,14 @@ PRIVATE struct nanvix_mutex _name_lock;
  */
 PRIVATE struct nanvix_mutex _local_lock;
 
-//PRIVATE struct nanvix_cond_var _local_condvar;
+PRIVATE struct nanvix_mutex _lock2;
 
 /**
  * @brief Number of address cache lines.
  */
 #define ADDR_CACHE_ENTRIES 4
 
-struct addr_cache_value
+PRIVATE struct addr_cache_value
 {
 	/*
 	 * XXX: Don't Touch! This Must Come First!
@@ -177,21 +177,13 @@ PRIVATE struct addr_cache_value _addr_cache_get(const char *name)
 	ret.remote  = -1;
 	ret.port_nr = -1;
 
-	//uprintf("Before global lock");
-
 	/* Acquire the cache global lock. */
 	uassert(nanvix_mutex_lock(&_addr_cache.global_lock) == 0);
-
-		//uprintf("Got the lock");
 
 		/* Sinalize that one more thread is searching for cache entries. */
 		uassert(nanvix_semaphore_up(&_addr_cache.counter) == 0);
 
-		//uprintf("Signalized an up in the semaphore");
-
 	uassert(nanvix_mutex_unlock(&_addr_cache.global_lock) == 0);
-
-	//uprintf("After global lock");
 
 	/* Traverses the addr_cache structure. */
 	for (int i = 0; i < ADDR_CACHE_ENTRIES; ++i)
@@ -223,12 +215,8 @@ PRIVATE struct addr_cache_value _addr_cache_get(const char *name)
 		break;
 	}
 
-	//uprintf("Did not found an entry");
-
 	/* Sinalize that the current thread is no longer consulting the cache. */
 	uassert(nanvix_semaphore_down(&_addr_cache.counter) == 0);
-
-	//uprintf("Returning from cache_get");
 
 	return (ret);
 }
@@ -247,6 +235,7 @@ PRIVATE int _addr_cache_put(const char *name)
 {
 	int index;        /**< Index where the new entry will be stored. */
 	int min_refcount;
+	int value_id;
 
 	/* Acquire the cache global lock. */
 	uassert(nanvix_mutex_lock(&_addr_cache.global_lock) == 0);
@@ -282,13 +271,20 @@ PRIVATE int _addr_cache_put(const char *name)
 			_addr_cache.table[i].refcount = 0;
 		}
 
-		/* Frees the resource allocated to the given index. */
-		resource_free(&pool_values, _addr_cache.table[index].entry.value_id);
-		_addr_cache.table[index].entry.value_id = -1;
+		/* Frees the resource allocated to the given index if there is one. */
+		if ((value_id = _addr_cache.table[index].entry.value_id) != -1)
+		{
+			_addr_cache.table[index].entry.value_id = -1;
+
+			resource_free(&pool_values, value_id);
+
+			_values[value_id].remote  = -1;
+			_values[value_id].port_nr = -1;
+		}
 
 		/* Inserts the new key in the index found in the last step. */
 		ustrcpy(_addr_cache.table[index].entry.name, name);
-		//_addr_cache.table[index].refcount++;
+		_addr_cache.table[index].refcount++;
 
 	/* Releases the global lock. */
 	uassert(nanvix_mutex_unlock(&_addr_cache.global_lock) == 0);
@@ -312,24 +308,48 @@ PRIVATE int _addr_cache_put(const char *name)
 PRIVATE int _addr_cache_update(const char *name, struct addr_cache_value value)
 {
 	int value_id; /**< Index where the new entry will be stored. */
+	int ret;
 
 	/* Traverses the address cache looking for the given key. */
 	for (int i = 0; i < ADDR_CACHE_ENTRIES; ++i)
 	{
-		/* Found? */
-		if (ustrcmp(_addr_cache.table[i].entry.name, name) != 0)
-			continue;
+		uassert(nanvix_mutex_lock(&_addr_cache.table[i].lock) == 0);
 
-		/* This key already have a value associated? */
-		if (_addr_cache.table[i].entry.value_id != -1)
-			return (-EINVAL);
+			/* Found? */
+			if (ustrcmp(_addr_cache.table[i].entry.name, name) != 0)
+			{
+				uassert(nanvix_mutex_unlock(&_addr_cache.table[i].lock) == 0);
+				continue;
+			}
 
-		/* Allocates a free value holder. */
-		if ((value_id = resource_alloc(&pool_values)) < 0)
-			return (-EAGAIN);
+			/* This key already have a value associated? */
+			if (_addr_cache.table[i].entry.value_id != -1)
+			{
+				if (value.remote != _values[_addr_cache.table[i].entry.value_id].remote ||
+						value.port_nr != _values[_addr_cache.table[i].entry.value_id].port_nr)
+					ret = (-EINVAL);
+				else
+					ret = _addr_cache.table[i].entry.value_id;
 
-		_values[value_id] = value;
-		_addr_cache.table[i].entry.value_id = value_id;
+				uassert(nanvix_mutex_unlock(&_addr_cache.table[i].lock) == 0);
+				return (ret);
+			}
+
+			/* Allocates a free value holder. */
+			if ((value_id = resource_alloc(&pool_values)) < 0)
+			{
+				uassert(nanvix_mutex_unlock(&_addr_cache.table[i].lock) == 0);
+				return (-EAGAIN);
+			}
+
+			/* Keeps the allocated resource information. */
+			value.resource = _values[value_id].resource;
+
+			/* Updates allocated value attributes. */
+			_values[value_id] = value;
+			_addr_cache.table[i].entry.value_id = value_id;
+
+		uassert(nanvix_mutex_unlock(&_addr_cache.table[i].lock) == 0);
 
 		return (i);
 	}
@@ -657,18 +677,14 @@ PUBLIC int nanvix_name_address_lookup(const char *name, int *port)
 
 again:
 	/* Checks local address cache first. */
-	//uprintf("Searching for address in cache.");
-
 	cache_value = _addr_cache_get(name);
 
 	/* Valid reference was found? */
-	if ((ret = cache_value.remote) > 0)
+	if ((ret = cache_value.remote) >= 0)
 	{
 		*port = cache_value.port_nr;
 		return (cache_value.remote);
 	}
-
-	//uprintf("No valid reference found");
 
 	/* Already testes if it is a local node? */
 	if (may_be_local)
@@ -693,8 +709,6 @@ again:
 		may_be_local = 0;
 	}
 
-	//uprintf("Not a local process");
-
 	/**
 	 * Resolves @p name address consulting the remote cluster associated.
 	 *
@@ -708,10 +722,21 @@ again:
 	 */
 
 	/* Is there another thread already realizing an address requisition? */
-	if (nanvix_mutex_trylock(&_local_lock) != 0)
+	if (nanvix_mutex_trylock(&_lock2) != 0)
 	{
 		goto again;
 	}
+
+		/* Second cache_get to avoid unexpected situations. */
+		cache_value = _addr_cache_get(name);
+
+		/* Valid reference was found? */
+		if ((ret = cache_value.remote) >= 0)
+		{
+			*port = cache_value.port_nr;
+			nanvix_mutex_unlock(&_lock2);
+			return (cache_value.remote);
+		}
 
 		/* From now on we have the local lock to send an address requisition. */
 
@@ -721,8 +746,10 @@ again:
 		/* Opens an outbox to the local name client. */
 		if ((outbox = kmailbox_open(nodenum, NANVIX_NAME_SNOOPER_PORT_NUM)) < 0)
 		{
+			nanvix_mutex_unlock(&_lock2);
 			ret = outbox;
-			goto end;
+
+			return (ret);
 		}
 
 		/* Build operation header. */
@@ -745,20 +772,6 @@ again:
 			/* Waits for the name snooper to sinalize that the remote lookup is done. */
 			uassert(nanvix_cond_wait(&_addr_cache.table[index].condvar, &_addr_cache.table[index].lock) == 0);
 
-			/* Not the expected process that was signaled? */
-			// if (ustrcmp(_addr_lookup_result.name, name) != 0)
-			// {
-			// 	if (ustrcmp(_addr_lookup_result.name, "") == 0)
-			// 	{
-			// 		ret = (-EAGAIN);
-			// 		goto end;
-			// 	}
-
-			// 	/* Wakes the next thread. */
-			// 	nanvix_cond_signal(&_local_condvar);
-			// 	goto again;
-			// }
-
 			/* Security check. */
 			uassert(ustrcmp(_addr_cache.table[index].entry.name, name) == 0);
 			value_id = _addr_cache.table[index].entry.value_id;
@@ -771,16 +784,10 @@ again:
 			if ((*port) < 0)
 				ret = (-ENOENT);
 
-			/* Resets the shared variable. */
-			// _addr_lookup_result.port_nr = -1;
-			// ustrcpy(_addr_lookup_result.name, "");
-			// _addr_lookup_result.read    = 1;
-
 unlock_entry:
 		uassert(nanvix_mutex_unlock(&_addr_cache.table[index].lock) == 0);
 
-end:
-	nanvix_mutex_unlock(&_local_lock);
+	nanvix_mutex_unlock(&_lock2);
 
 	uassert(kmailbox_close(outbox) == 0);
 
@@ -959,7 +966,6 @@ static void * nanvix_name_snooper(void *args)
 #if DEBUG
 		uprintf("[nanvix][name] name resolution answer received");
 #endif /* DEBUG */
-				//uassert(nanvix_mutex_lock(&_local_lock) == 0);
 
 				value.remote  = request.header.source;
 				value.port_nr = request.op.addr_ans.port_nr;
@@ -967,13 +973,8 @@ static void * nanvix_name_snooper(void *args)
 				/* Updates the key with its new valuein the addres cache. */
 				uassert((index = _addr_cache_update(request.op.addr_ans.name, value)) >= 0);
 
-				// ustrcpy(_addr_lookup_result.name, );
-				// _addr_lookup_result.read = 0;
-
 				/* Wakes all threads waiting for this result. */
 				uassert(nanvix_cond_broadcast(&_addr_cache.table[index].condvar) == 0);
-
-				//uassert(nanvix_mutex_unlock(&_local_lock) == 0);
 
 				break;
 
@@ -1091,10 +1092,10 @@ int __nanvix_name_daemon_init(void)
 	 */
 	uassert(nanvix_mutex_init(&_local_lock, NULL) == 0);
 
+	uassert(nanvix_mutex_init(&_lock2, NULL) == 0);
+
 	/* Initializes the address cache structure. */
 	uassert(_addr_cache_init() == 0);
-
-	//uassert(nanvix_cond_init(&_local_condvar) == 0);
 
 	/* Creates the name snooper thread. */
 	uassert(kthread_create(&nanvix_name_snooper_tid, &nanvix_name_snooper, NULL) == 0);
