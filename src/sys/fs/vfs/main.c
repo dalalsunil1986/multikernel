@@ -202,12 +202,16 @@ static int do_vfs_server_close(const struct vfs_message *request)
 static int do_vfs_server_unlink(const struct vfs_message *request)
 {
 	int ret;
+	int disc; /* should disconnect */
+	int aux_conn = lookup(pid, port);
 	const int port = request->header.mailbox_port;
 	const nanvix_pid_t pid = request->header.source;
-	int aux_conn = lookup(pid, port);
+
+	disc = 0;
 
 	/* file not open, open it */
-	if ( aux_conn <= 0) {
+	if (aux_conn <= 0) {
+		disc = 1;
 		aux_conn = connect(pid, port);
 	}
 
@@ -221,7 +225,7 @@ static int do_vfs_server_unlink(const struct vfs_message *request)
 	);
 
 	/* disconnect if connection was opened by this function */
-	if (aux_conn <= 0)
+	if (disc)
 		disconnect(pid, port);
 
 	/* Operation failed. */
