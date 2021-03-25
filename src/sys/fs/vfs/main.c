@@ -220,11 +220,14 @@ static int do_vfs_server_unlink(const struct vfs_message *request)
 		request->op.unlink.filename
 	);
 
+	/* disconnect if connection was opened by this function */
+	if (aux_conn <= 0)
+		disconnect(pid, port);
+
 	/* Operation failed. */
 	if (ret < 0)
 		return (ret);
 
-	disconnect(pid, port);
 
 	return (0);
 }
