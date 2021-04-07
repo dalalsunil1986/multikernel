@@ -35,6 +35,8 @@ extern int __main3(int argc, const char *argv[]);
 
 #if __NANVIX_USES_LWMPI
 
+	extern int __main_wrapper(int argc, const char *argv[]);
+
 	/**
 	 * Routine that prepare the MPI Runtime environment.
 	 */
@@ -44,6 +46,12 @@ extern int __main3(int argc, const char *argv[]);
 	 * Routine that cleanup the MPI Runtime environment.
 	 */
 	extern int __mpi_processes_finalize(void);
+
+#else
+
+	static inline int __main_wrapper(int argc, const char *argv[]) {
+		return (__main3(argc, argv));
+	}
 
 #endif
 
@@ -80,7 +88,7 @@ int __main2(int argc, const char *argv[])
 
 		uassert(stdsync_fence() == 0);
 
-		__main3(argc, argv);
+		__main_wrapper(argc, argv);
 
 		/* Join the user processes. */
 #if __NANVIX_USES_LWMPI
