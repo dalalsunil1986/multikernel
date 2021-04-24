@@ -29,9 +29,15 @@
 	#define __NEED_TYPES_PM
 	#define __NEED_SPAWN_SERVER
 
+	#include <nanvix/config.h>
 	#include <nanvix/types/pm.h>
 	#include <nanvix/limits/pm.h>
 	#include <nanvix/runtime/pm.h>
 	#include <nanvix/servers/spawn.h>
+
+	/**
+	 * @brief Check if Root User
+	 */
+	#define IS_SUPERUSER(x) ((x) == NANVIX_ROOT_UID)
 
 #endif /* NANVIXPM_H_ */
