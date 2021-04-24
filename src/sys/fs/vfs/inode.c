@@ -26,6 +26,7 @@
 #define __VFS_SERVER
 
 #include <nanvix/servers/vfs.h>
+#include <nanvix/types/vfs.h>
 #include <nanvix/sys/perf.h>
 #include <nanvix/config.h>
 #include <nanvix/dev.h>
@@ -33,20 +34,6 @@
 #include <nanvix/ulib.h>
 #include <posix/sys/types.h>
 #include <posix/errno.h>
-
-/**
- * @brief In-Memory Inode
- */
-struct inode
-{
-	/* Must come first. */
-	struct resource resource;
-
-	struct d_inode data; /**< Underlying Disk Inode  */
-	dev_t dev;           /**< Underlying Device      */
-	ino_t num;           /**< Inode Number           */
-	int count;           /**< Reference count        */
-};
 
 /**
  * @brief Table of Inodes
@@ -108,6 +95,112 @@ ino_t inode_get_num(const struct inode *ip)
 	}
 
 	return (ip->num);
+}
+
+
+/*============================================================================*
+ * inode_null()                                                           *
+ *============================================================================*/
+
+/**
+ * The inode_null() function zeroes the number of the inode pointed to
+ * by @p ip.
+ */
+void inode_null(struct inode *ip)
+{
+	/* Invalid inode. */
+	if (ip == NULL)
+	{
+		curr_proc->errcode = -EINVAL;
+		return;
+	}
+
+	/* Bad inode. */
+	if (ip->count == 0)
+	{
+		curr_proc->errcode = -EINVAL;
+		return;
+	}
+
+	ip->num = MINIX_INODE_NULL;
+}
+
+/*============================================================================*
+ * inode_get_count()                                                          *
+ *============================================================================*/
+
+/**
+ * The inode_get_count() function gets the inode count of the inode pointed to
+ * by @p ip.
+ */
+int inode_get_count(const struct inode *ip)
+{
+	/* Invalid inode. */
+	if (ip == NULL)
+	{
+		curr_proc->errcode = -EINVAL;
+		return (MINIX_INODE_NULL);
+	}
+
+	return (ip->count);
+}
+
+/*============================================================================*
+ * inode_set_count()                                                          *
+ *============================================================================*/
+
+/**
+ * The inode_set_count() function sets the inode count of the inode pointed to
+ * by @p ip to the value of @p c.
+ */
+int inode_set_count(struct inode *ip, const int c)
+{
+	/* Invalid inode. */
+	if (ip == NULL)
+	{
+		curr_proc->errcode = -EINVAL;
+		return (MINIX_INODE_NULL);
+	}
+
+	ip->count = c;
+
+	return (0);
+}
+
+/**
+ * The inode_increase_count() function increases the inode count of the inode pointed to
+ * by @p ip by 1
+ */
+int inode_increase_count(struct inode *ip)
+{
+	/* Invalid inode. */
+	if (ip == NULL)
+	{
+		curr_proc->errcode = -EINVAL;
+		return (MINIX_INODE_NULL);
+	}
+
+	ip->count++;
+
+	return (0);
+}
+
+/**
+ * The inode_decrease_count() function decreases the inode count of the inode pointed to
+ * by @p ip by 1
+ */
+int inode_decrease_count(struct inode *ip)
+{
+	/* Invalid inode. */
+	if (ip == NULL)
+	{
+		curr_proc->errcode = -EINVAL;
+		return (MINIX_INODE_NULL);
+	}
+
+	ip->count--;
+
+	return (0);
 }
 
 /*============================================================================*
@@ -269,7 +362,7 @@ static int inode_free(struct filesystem *fs, struct inode *ip)
 	/* Bad inode. */
 	if (ip->count == 0)
 		return (curr_proc->errcode = -EBUSY);
-	
+
 	/* Release inode. */
 	if (ip->count-- == 1)
 	{
@@ -461,6 +554,39 @@ struct inode *inode_alloc(
  *============================================================================*/
 
 /**
+ * @brief Gets the first path part and stores it in @p dirname
+ */
+char *dirname(const char *path, char *dirname)
+{
+	const char *pa;    /* path pointer    */
+	char *dp;          /* dirname pointer */
+
+	if (path == NULL)
+		return (NULL);
+
+	pa = path;
+	dp = dirname;
+
+	/* ignore beggining '/' */
+	while (*pa == '/')
+		pa++;
+
+	/* read until next '/' or end of string */
+	while (*pa != '/' && *pa != '\0') {
+
+		/* name too long */
+		if ((dp - dirname) > NANVIX_NAME_MAX)
+			return (NULL);
+
+		*dp++ = *pa++;
+	}
+
+	*dp = '\0';
+
+	return dirname;
+}
+
+/**
  * The inode_name() function lookups an inode by the name pointed to by
  * @p name. The root directory of @p fs is used as start point for the
  * search.
@@ -470,9 +596,14 @@ struct inode *inode_alloc(
  */
 struct inode *inode_name(struct filesystem *fs, const char *name)
 {
-	struct inode *dinode;   /* Directory's inode.     */
-	off_t off;              /* Offset of Target Inode */
-	struct d_dirent dirent; /* Directory Entry        */
+	struct inode *dinode;   /* Directory's inode.       */
+	off_t off;              /* Offset of Target Inode   */
+	struct d_dirent dirent; /* Directory Entry          */
+	const char *remainder;  /* Path remainder string    */
+	char *needle;           /* searched directory entry */
+	char filename[NANVIX_NAME_MAX + 1];
+
+	remainder = name;
 
 	/* Invalid file system */
 	if (fs == NULL)
@@ -482,33 +613,70 @@ struct inode *inode_name(struct filesystem *fs, const char *name)
 	}
 
 	/* Invalid name. */
-	if (name == NULL)
+	if (name == NULL || *name == '\0')
 	{
 		curr_proc->errcode = -EINVAL;
 		return (NULL);
 	}
 
-	dinode = curr_proc->root;
+	/* root directory */
+	if ((ustrncmp(name, "/", NANVIX_NAME_MAX)) == 0)
+		return inode_get(fs, MINIX_INODE_ROOT);
 
-	/* Failed to get directory. */
-	if (dinode == NULL)
-	{
-		curr_proc->errcode = -EINVAL;
-		return (NULL);
-	}
+	/* absolute path */
+	if (*remainder == '/')
+		dinode = inode_get(fs, MINIX_INODE_ROOT);
 
-	/* Search file. */
-	if ((off = minix_dirent_search(fs->dev, &fs->super->data, fs->super->bmap, inode_disk_get(dinode), name, 0)) < 0)
-	{
-		curr_proc->errcode = -ENOENT;
-		return (NULL);
-	}
+	/* relative path */
+	else
+		dinode = inode_get(fs, inode_get_num(curr_proc->pwd));
 
-	/* Read Directory entry */
-	if (bdev_read(fs->dev, (char *) &dirent, sizeof(struct d_dirent), off) < 0)
-	{
-		curr_proc->errcode = -EIO;
-		return (NULL);
+	/* parse path */
+	while (*remainder != '\0') {
+		/* Failed to get directory. */
+		if (dinode == NULL)
+		{
+			curr_proc->errcode = -EINVAL;
+			return (NULL);
+		}
+
+		/* TODO: Use real uid and gid */
+		if (!(has_permissions(
+						inode_disk_get(dinode)->i_mode,
+						NANVIX_ROOT_UID,
+						NANVIX_ROOT_GID,
+						(S_IRUSR | S_IRGRP | S_IROTH))
+					)) {
+			curr_proc->errcode = -EACCES;
+			return (NULL);
+		}
+
+		/* skip beggining '/' */
+		while (*remainder == '/')
+			remainder++;
+
+		/* get the dirname of the path */
+		if ((needle = dirname(remainder, filename)) == NULL)
+			return (NULL);
+
+		/* Search file. */
+		if ((off = minix_dirent_search(fs->dev, &fs->super->data, fs->super->bmap, inode_disk_get(dinode), needle, 0)) < 0)
+		{
+			curr_proc->errcode = -ENOENT;
+			return (NULL);
+		}
+
+		/* Read Directory entry */
+		if (bdev_read(fs->dev, (char *) &dirent, sizeof(struct d_dirent), off) < 0)
+		{
+			curr_proc->errcode = -EIO;
+			return (NULL);
+		}
+
+		dinode = inode_get(&fs_root, dirent.d_ino);
+		/* move to the next directory in path */
+		while (*remainder != '/' && *remainder != '\0')
+			remainder++;
 	}
 
 	return (inode_get(&fs_root, dirent.d_ino));

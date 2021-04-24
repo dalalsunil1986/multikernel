@@ -35,6 +35,7 @@
 #include <nanvix/fs.h>
 #include <nanvix/types.h>
 #include <nanvix/ulib.h>
+#include <posix/sys/stat.h>
 
 /* Import definitions. */
 extern void vfs_test(void);
@@ -56,6 +57,50 @@ static struct
  * @brief Buffer for Read/Write Requests
  */
 static char buffer[NANVIX_FS_BLOCK_SIZE];
+
+/*============================================================================*
+ * do_vfs_server_stat()                                                       *
+ *============================================================================*/
+
+/**
+ * @brief Handles an stat request.
+ *
+ * @param request  Target request.
+ * @param response Response.
+ *
+ * @returns Upon successful completion, zero is returned. Upon failure,
+ * a negative error code is returned instead.
+ *
+ * @author Lucca Augusto
+ */
+static int do_vfs_server_stat(
+	const struct vfs_message *request,
+	struct vfs_message *response
+)
+{
+	int ret;
+	const int port = request->header.mailbox_port;
+	const nanvix_pid_t pid = request->header.source;
+	const int connection = connect(pid, port);
+
+	/* XXX: forward parameter checking to lower level function. */
+
+	ret = vfs_stat(
+		connection,
+		request->op.stat.filename,
+		&response->op.stat.buf
+	);
+	/* Operation failed. */
+	if (ret < 0)
+	{
+		disconnect(pid, port);
+		return (ret);
+	}
+
+	response->op.ret.fd = ret;
+
+	return (0);
+}
 
 /*============================================================================*
  * do_vfs_server_open()                                                       *
@@ -88,7 +133,7 @@ static int do_vfs_server_open(
 		connection,
 		request->op.open.filename,
 		request->op.open.oflag,
-		0
+		request->op.open.mode
 	);
 
 	/* Operation failed. */
@@ -136,6 +181,57 @@ static int do_vfs_server_close(const struct vfs_message *request)
 		return (ret);
 
 	disconnect(pid, port);
+
+	return (0);
+}
+
+/*============================================================================*
+ * do_vfs_server_unlink()                                                     *
+ *============================================================================*/
+
+/**
+ * @brief Handles a unlink request.
+ *
+ * @param request Target request.
+ *
+ * @returns Upon successful completion, zero is returned. Upon failure,
+ * a negative error code is returned instead.
+ *
+ * @author Lucca Augusto
+ */
+static int do_vfs_server_unlink(const struct vfs_message *request)
+{
+	int ret;
+	int disc; /* should disconnect */
+	const int port = request->header.mailbox_port;
+	const nanvix_pid_t pid = request->header.source;
+	int aux_conn = lookup(pid, port);
+
+	disc = 0;
+
+	/* file not open, open it */
+	if (aux_conn <= 0) {
+		disc = 1;
+		aux_conn = connect(pid, port);
+	}
+
+	const int connection = aux_conn;
+
+	/* XXX: forwarding parameter checking to lower level function. */
+
+	ret = vfs_unlink(
+		connection,
+		request->op.unlink.filename
+	);
+
+	/* disconnect if connection was opened by this function */
+	if (disc)
+		disconnect(pid, port);
+
+	/* Operation failed. */
+	if (ret < 0)
+		return (ret);
+
 
 	return (0);
 }
@@ -342,6 +438,8 @@ static int do_vfs_server_read(
 	return (0);
 }
 
+
+
 /*============================================================================*
  * vfs_loop()                                                                 *
  *============================================================================*/
@@ -397,6 +495,7 @@ static int do_vfs_server_loop(void)
 				break;
 
 			case VFS_UNLINK:
+				ret = do_vfs_server_unlink(&request);
 				reply = 1;
 				break;
 
@@ -415,6 +514,7 @@ static int do_vfs_server_loop(void)
 
 			case VFS_STAT:
 				reply = 1;
+				ret = do_vfs_server_stat(&request, &response);
 				break;
 
 			case VFS_READ:

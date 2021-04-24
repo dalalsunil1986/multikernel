@@ -35,6 +35,7 @@
 	#include <nanvix/hal/resource.h>
 	#include <posix/sys/types.h>
 	#include "minix.h"
+	#include "fprocess.h"
 
 	/**
 	 * @brief In-Memory Superblock
@@ -73,6 +74,16 @@
 	};
 
 	/**
+	 * @brief Checks file access permissions
+	 */
+	extern mode_t has_permissions(
+			mode_t mode,
+			nanvix_uid_t uid,
+			nanvix_gid_t gid,
+			mode_t mask
+		);
+
+	/**
 	 * @brief Initializes the file system.
 	 */
 	extern void fs_init(void);
@@ -81,6 +92,24 @@
 	 * @brief Shustdowns the file system.
 	 */
 	extern void fs_shutdown(void);
+
+	/**
+	 * @brief Counts number of blocks a file occupies
+	 *
+	 * @param ip File inode
+	 */
+	extern int file_block_count(struct inode *ip);
+
+	/**
+	 * @brief Gets Stats about a file
+	 *
+	 * @param filename Filename Name of the target file.
+	 * @param buf      Buffer to write stats to.
+	 *
+	 * @returns Upon successful completion, this function returns 0.
+	 * Upon failure, a negative error code is returned instead.
+	 */
+	extern int fs_stat(const char *filename, struct nanvix_stat *restrict buf);
 
 	/**
 	 * @brief Opens a file.
@@ -104,6 +133,15 @@
 	 * failure, a negative error code is returned instead.
 	 */
 	extern int fs_close(int fd);
+
+	/**
+ 	 * @brief Unlink a file from it's directory
+ 	 *
+ 	 * @param filename: path of the file to be unlinked
+	 * @returns Upon successful completion, zero is returned. Upon
+	 * failure, a negative error code is returned instead.
+ 	 */
+	extern int fs_unlink(const char *filename);
 
 	/**
 	 * @brief Reads data from a file.

@@ -21,50 +21,24 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+#ifndef NANVIX_TYPES_VFS_H_
+#define NANVIX_TYPES_VFS_H_
 
-#ifndef NANVIX_SERVERS_VFS_FPROCESS_H_
-#define NANVIX_SERVERS_VFS_FPROCESS_H_
-
-	#ifndef __VFS_SERVER
-	#error "do not include this file"
-	#endif
-
-	/* Must come first. */
-	#define __NEED_LIMITS_FS
-
-	#include <nanvix/limits/fs.h>
+	#include <nanvix/servers/vfs.h>
+	#include <posix/sys/types.h>
 
 	/**
-	 * @brief (File System) Process
+	 * @brief In-Memory Inode
 	 */
-	struct fprocess
+	struct inode
 	{
-		int errcode;                          /**< Error Code        */
-		mode_t umask;                   /**< Default umask     */
-		struct inode *pwd;                    /**< Working Directory */
-		struct inode *root;                   /**< Root Directory    */
-		struct file *ofiles[NANVIX_OPEN_MAX]; /**< Opened Files      */
+		/* Must come first. */
+		struct resource resource;
+	
+		struct d_inode data; /**< Underlying Disk Inode  */
+		dev_t dev;           /**< Underlying Device      */
+		ino_t num;           /**< Inode Number           */
+		int count;           /**< Reference count        */
 	};
 
-	/**
-	 * @brief Initialize the table of file system processes.
-	 */
-	extern void fprocess_init(void);
-
-	/**
-	 * @brief Launches a file system process.
-	 *
-	 * @param connection Target connection
-	 *
-	 * @returns Upon sucessful completion, zero is returned. Upon failure, a
-	 * negative error code is returned instead.
-	 */
-	extern int fprocess_launch(int connection);
-
-	/**
-	 * @brief Current Process
-	 */
-	extern struct fprocess *curr_proc;
-
-#endif /* NANVIX_SERVERS_VFS_FPROCESS_H_*/
-
+#endif /* NANVIX_TYPES_VFS_H_ */

@@ -53,6 +53,26 @@ int vfs_open(int connection, const char *filename, int oflag, mode_t mode)
 }
 
 /*============================================================================*
+ * vfs_stat()                                                                 *
+ *============================================================================*/
+
+/**
+ * @see fs_stat().
+ */
+int vfs_stat(int connection, const char *filename, struct nanvix_stat *restrict buf)
+{
+	/* Invalid file name. */
+	if (filename == NULL)
+		return (-EINVAL);
+
+	/* Launch process. */
+	if (fprocess_launch(connection) < 0)
+		return (-EINVAL);
+
+	return (fs_stat(filename, buf));
+}
+
+/*============================================================================*
  * vfs_close()                                                                *
  *============================================================================*/
 
@@ -73,6 +93,22 @@ int vfs_close(int connection, int fd)
 }
 
 /*============================================================================*
+ * vfs_unlink()                                                               *
+ *============================================================================*/
+
+/**
+ * @see fs_unlink().
+ */
+int vfs_unlink(int connection, const char *filename)
+{
+	/* Launch process. */
+	if (fprocess_launch(connection) < 0)
+		return (-EINVAL);
+
+	return (fs_unlink(filename));
+}
+
+/*============================================================================*
  * vfs_read()                                                                 *
  *============================================================================*/
 
@@ -87,6 +123,10 @@ ssize_t vfs_read(int connection, int fd, void *buf, size_t n)
 
 	/* Invalid buffer. */
 	if (buf == NULL)
+		return (-EINVAL);
+
+	/* n too big */
+	if (n > MINIX_BLOCK_SIZE)
 		return (-EINVAL);
 
 	/* Launch process. */
@@ -111,6 +151,10 @@ ssize_t vfs_write(int connection, int fd, void *buf, size_t n)
 
 	/* Invalid buffer. */
 	if (buf == NULL)
+		return (-EINVAL);
+
+	/* n too big */
+	if (n > MINIX_BLOCK_SIZE)
 		return (-EINVAL);
 
 	/* Launch process. */

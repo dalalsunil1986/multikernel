@@ -27,6 +27,7 @@
 
 	#include <nanvix/servers/vfs/const.h>
 	#include <nanvix/servers/vfs/types.h>
+	#include <posix/sys/stat.h>
 
 #if defined(__NEED_FS_VFS_SERVER) || defined(__VFS_SERVER)
 
@@ -80,7 +81,17 @@
 			{
 				char filename[NANVIX_NAME_MAX]; /**< File Name  */
 				int oflag;                      /**< Open Flags */
+				mode_t mode;                    /**< Mode Flags */
 			} open;
+
+			/**
+			 * @brief Stat
+			 */
+			struct
+			{
+				char filename[NANVIX_NAME_MAX]; /**< File Name  */
+				struct nanvix_stat buf;         /**< Stats buf */
+			} stat;
 
 			/**
 			 * @brief Close
@@ -89,6 +100,14 @@
 			{
 				int fd; /**< File Descriptor */
 			} close;
+
+			/**
+			 * @brief Unlink
+			 */
+			struct
+			{
+				char filename[NANVIX_NAME_MAX]; /**< File path */
+			} unlink;
 
 			/**
 			 * @brief Seek

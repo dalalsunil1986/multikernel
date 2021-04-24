@@ -25,15 +25,18 @@
 /* Must come first. */
 #define __VFS_SERVER
 
-#include <nanvix/config.h>
+#include <nanvix/pm.h>
 #include <nanvix/servers/vfs.h>
+#include <nanvix/servers/vfs/bcache.h>
+#include <nanvix/servers/vfs/inode.h>
+#include <nanvix/types/vfs.h>
 #include <nanvix/dev.h>
 #include <nanvix/limits.h>
 #include <posix/sys/types.h>
-#include <posix/sys/stat.h>
 #include <posix/errno.h>
 #include <posix/fcntl.h>
 #include <posix/unistd.h>
+#include <posix/stdlib.h>
 
 /**
  * Root file system.
@@ -55,6 +58,35 @@ static struct file filetab[NANVIX_NR_FILES];
 	(x)->pos = 0;           \
 	(x)->inode = NULL;      \
 }
+
+
+/**
+ * @brief Checks file access permissions
+ * TODO use real uid and gid instead of superuser
+ */
+mode_t has_permissions(mode_t mode, nanvix_uid_t uid, nanvix_gid_t gid, mode_t mask)
+{
+	mode &= mask;
+
+	/* Super user */
+	if (IS_SUPERUSER(NANVIX_ROOT_UID))
+		mode &= (S_IRWXU | S_IRWXG | S_IRWXO);
+
+	/* owner user */
+	else if (NANVIX_ROOT_UID == uid)
+		mode &= (S_IRUSR | S_IWUSR | S_IXUSR);
+
+	/* group */
+	else if (NANVIX_ROOT_GID == gid)
+		mode &= (S_IRGRP | S_IWGRP | S_IXGRP);
+
+	/* Others */
+	else
+		mode &= (S_IRWXO);
+
+	return (mode);
+}
+
 
 /*============================================================================*
  * getfile()                                                                  *
@@ -107,49 +139,215 @@ static int getfildes(void)
 }
 
 /*============================================================================*
+ * fs_truncate()                                                                  *
+ *============================================================================*/
+
+/**
+ * @brief This function truncates the inode @p ip
+ * that exists under the filesystem @p fs
+ *
+ * @param fs: filesystem
+ * @param ip: inode to be truncated
+ *
+ * @author Lucca Augusto
+ */
+void do_trucate(struct filesystem *fs, struct inode *ip)
+{
+	struct d_inode *ino_data;     /* underlying d_inode */
+
+	ino_data = inode_disk_get(ip);
+
+	/* TODO: update timestamps */
+
+	/* Free direct zone. */
+	for (int j = 0; j < MINIX_NR_ZONES_DIRECT; j++)
+	{
+		minix_block_free_direct(&(fs->super->data), fs->super->bmap, j);
+		ino_data->i_zones[j] = MINIX_BLOCK_NULL;
+	}
+
+	/* Free singly indirect zones. */
+	for (int j = 0; j < MINIX_NR_ZONES_SINGLE; j++)
+	{
+		minix_block_free_indirect(&(fs->super->data), fs->super->bmap, j);
+		ino_data->i_zones[MINIX_ZONE_SINGLE + j] = MINIX_BLOCK_NULL;
+	}
+
+	/* Free double indirect zones. */
+	for (int j = 0; j < MINIX_NR_ZONES_DOUBLE; j++)
+	{
+		minix_block_free_dindirect(&(fs->super->data), fs->super->bmap, j);
+		ino_data->i_zones[MINIX_ZONE_DOUBLE + j] = MINIX_BLOCK_NULL;
+	}
+
+	ino_data->i_size = 0;
+	inode_touch(ip);
+}
+
+
+/**
+ * @brief See do_truncate
+ */
+int fs_trucate(struct filesystem *fs, struct inode *ip)
+{
+
+	/* Invalid file system */
+	if (fs == NULL)
+		return (curr_proc->errcode = -EINVAL);
+
+	/* Invalid inode. */
+	if (ip == NULL)
+		return (curr_proc->errcode = -EINVAL);
+
+	/* Bad inode. */
+	if (fs->dev != inode_get_dev(ip))
+		return (curr_proc->errcode = -EINVAL);
+
+	/* Bad inode. */
+	if (inode_get_count(ip) == 0)
+		return (curr_proc->errcode = -EINVAL);
+
+	/* truncate inode. */
+	do_trucate(fs, ip);
+
+	return (0);
+}
+
+/*============================================================================*
  * fs_open()                                                                  *
  *============================================================================*/
 
 /**
- * @todo TODO: provide a detailed description for this function.
+ * @brief: Creates a file
+ *
+ * @param name: name of the file to be created
+ * @param mode: access mode flags
+ * @param oflag: creation flags
+ *
+ * @returns Upon successful completion an inode to the newly created file
+ * is returned. Upon failure, NULL is returned instead
  */
-static struct inode *do_creat(
-	const char *name,
-	mode_t mode,
-	int oflag
-)
+static struct inode *do_creat( const char *name, int oflag, mode_t mode)
 {
-	((void) name);
-	((void) mode);
-	((void) oflag);
+	int exists = 0;           /* file already exists   */
+	int dadd_err = 0;         /* dirent add error code */
+	struct inode *ip;         /* inode                 */
+	struct inode *curr_dir;   /* current directory     */
 
-	curr_proc->errcode = -ENOENT;
+	/* not asked to create file or no permissions to write*/
+	if (!(oflag & O_CREAT)) {
+		curr_proc->errcode = -(ENOENT);
+		return (NULL);
+	}
+
+	if (mode <= 0) {
+		curr_proc->errcode = -(EINVAL);
+		return (NULL);
+	}
+
+	mode &= ~(curr_proc->umask);
+	mode |= S_IFREG;
+
+	/* file already exists */
+	if ((ip = inode_name(&fs_root, name)) != NULL) {
+		exists = 1;
+		/* no write permitions */
+		/* TODO: use real uid and gid */
+		if (!(has_permissions(mode, NANVIX_ROOT_UID, NANVIX_ROOT_GID, (S_IWUSR | S_IWGRP | S_IWOTH)))) {
+			curr_proc->errcode = -(EACCES);
+			goto error;
+		}
+
+		/* directory */
+		if (S_ISDIR(inode_disk_get(ip)->i_mode)) {
+			curr_proc->errcode = -(EINVAL);
+			goto error;
+		}
+	}
+
+	/* file does not exist */
+	else {
+		/* TODO: find current directory */
+		curr_dir = curr_proc->pwd;
+
+		/* no write permissions to the directory */
+		/* TODO: use real uid and gid */
+		if (!(has_permissions(inode_disk_get(curr_dir)->i_mode,
+						NANVIX_ROOT_UID,
+						NANVIX_ROOT_GID,
+						(S_IWUSR | S_IWGRP | S_IWOTH))
+			 ))
+		{
+			curr_proc->errcode = -(EACCES);
+			return (NULL);
+		}
+
+		/* allocate inode and create dirent */
+
+		/* TODO: pass uid and gid instead of superuser */
+		if ((ip = inode_alloc(&fs_root, mode, NANVIX_ROOT_UID, NANVIX_ROOT_GID)) == NULL)
+			/* errcode set by inode_alloc */
+			return (NULL);
+
+		dadd_err = minix_dirent_add( inode_get_dev(ip),
+						&(fs_root.super->data),
+						fs_root.super->bmap,
+						inode_disk_get(curr_dir),
+						name,
+						inode_get_num(ip)
+					);
+
+		if (dadd_err < 0) {
+			curr_proc->errcode = (dadd_err);
+			goto error;
+		}
+
+	}
+
+	/* file already existed, truncate it */
+	if (exists && (oflag & O_TRUNC)) {
+		if (fs_trucate(&fs_root, ip) != 0) {
+			goto error;
+		}
+	}
+
+	return ip;
+error:
+	inode_put(&fs_root, ip);
 	return (NULL);
+
 }
 
 /**
- * @todo TODO: Provide a detailed description for this function.
+ * @brief Opens a file
+ *
+ * @returns Upon successful completion, a inode is
+ * returned. Upon failure, NULL is returned instead.
  */
 static struct inode *do_open(const char *filename, int oflag, mode_t mode)
 {
 	struct inode *ip;
 
 	/* Invalid filename. */
-	if (filename == NULL)
+	if (filename == NULL || *filename == '\0')
 	{
 		curr_proc->errcode = -EINVAL;
 		return (NULL);
 	}
 
-	/* Search file. */
+	/* Search file and create it if flag has O_CREAT bit. */
 	if ((ip = inode_name(&fs_root, filename)) == NULL)
 	{
-		/* Create it. */
-		if ((ip = do_creat(filename, mode, oflag)) == NULL)
+		if (!(oflag & O_CREAT)) {
+			curr_proc->errcode = -ENOENT;
 			return (NULL);
+		}
 
+		if ((ip = do_creat(filename, oflag, mode)) == NULL)
+			return (NULL);
 		return (ip);
 	}
+
 
 	/* Block special file. */
 	if (S_ISBLK(inode_disk_get(ip)->i_mode))
@@ -179,6 +377,7 @@ error:
 	return (NULL);
 }
 
+
 /**
  * The fs_open() function opens the file named @p filename. The @p
  * oflag parameter is used to set the opening flags, and @p mode is used
@@ -207,7 +406,7 @@ int fs_open(const char *filename, int oflag, mode_t mode)
 	/* Open file. */
 	if ((i = do_open(filename, oflag, mode)) == NULL)
 	{
-		f->count = 0;
+		f->count = -1;
 		return (curr_proc->errcode);
 	}
 
@@ -217,8 +416,208 @@ int fs_open(const char *filename, int oflag, mode_t mode)
 	f->inode = i;
 
 	curr_proc->ofiles[fd] = f;
-
 	return (fd);
+}
+
+/*============================================================================*
+ * fs_stat()                                                                  *
+ *============================================================================*/
+
+/**
+ * @brief Counts number of blocks a file occupies
+ *
+ * @param ip File inode
+ */
+int file_block_count(struct inode *ip)
+{
+	int nr_blocks = 0;          /* block count                  */
+	char *buf_data;             /* buffer data                  */
+	char *buf_data_di;          /* buffer data indirect         */
+	struct buffer *blk_buf;     /* block buffer                 */
+	struct buffer *blk_buf_di;  /* block buffer double indirect */
+	struct d_inode *ino_data;   /* inode data                   */
+
+	/* invalid inode */
+	if (ip == NULL) {
+		return -EINVAL;
+	}
+
+ 	ino_data = inode_disk_get(ip);
+
+	/* Count number of blocks */
+	for (unsigned int i=0; i < MINIX_NR_ZONES; ++i) {
+		if (i == MINIX_ZONE_DOUBLE) {
+			/* counting double indirect zones */
+
+			blk_buf = bread(inode_get_dev(ip), ino_data->i_zones[i]);
+			buf_data = buffer_get_data(blk_buf);
+
+			/* traverse first indirect zone */
+			for (unsigned j=0; j < MINIX_NR_DOUBLE; ++j) {
+
+				/* count zones if block is not null */
+				if (buf_data[j] != MINIX_BLOCK_NULL) {
+
+					blk_buf_di = bread(inode_get_dev(ip),buf_data[j]);
+					buf_data_di = buffer_get_data(blk_buf_di);
+					/* count number of zones inside each indirect zone */
+
+					/* traverse second indirect zone */
+					for (unsigned k=0; k < MINIX_NR_SINGLE; ++k) {
+
+						if (buf_data_di[k] != MINIX_BLOCK_NULL) {
+
+							++nr_blocks;
+
+						} else {
+							/* quit all loops */
+							i = MINIX_NR_ZONES;
+							j = MINIX_NR_DOUBLE;
+							break;
+						}
+					}
+				} else {
+					/* quit all loops */
+					j = MINIX_NR_DOUBLE;
+					break;
+				}
+
+			}
+
+		} else if (i == MINIX_ZONE_SINGLE) {
+			/* counting single indirect zones */
+
+			/* count zones if block is not null */
+			if (ino_data->i_zones[i] != MINIX_BLOCK_NULL) {
+
+				blk_buf = bread(inode_get_dev(ip),ino_data->i_zones[i]);
+				buf_data = buffer_get_data(blk_buf);
+
+				for (unsigned j=0; j < MINIX_NR_SINGLE; ++j) {
+					if (buf_data[j] != MINIX_BLOCK_NULL) {
+						++nr_blocks;
+					} else {
+						/* quit both loops */
+						i = MINIX_NR_ZONES;
+						break;
+					}
+				}
+			}
+
+		} else if (ino_data->i_zones[i] != MINIX_BLOCK_NULL ) {
+			/* counting direct zones */
+			++nr_blocks;
+		} else {
+			/* found MINIX_BLOCK_NULL so last zone was counted */
+			break;
+		}
+	}
+
+	brelse(blk_buf);
+	brelse(blk_buf_di);
+
+	return nr_blocks;
+}
+
+/**
+ * @brief Get stats about a file
+ * The do_stat function retrieves information about the file @p filename
+ * and writes it to the stat buffer @p buf.
+ * @returns 0 in case it succeeds, a negative error code instead.
+ */
+static int do_stat(const char *filename, struct nanvix_stat *restrict buf)
+{
+	struct inode *ip;           /* file inode                   */
+	struct d_inode *ino_data;   /* inode data                   */
+	nanvix_dev_t rdev = 0;      /* dev id if special file       */
+
+	/* Invalid filename. */
+	if (filename == NULL)
+	{
+		curr_proc->errcode = -EINVAL;
+		return -EINVAL;
+	}
+
+	/* Search file. */
+	if ((ip = inode_name(&fs_root, filename)) == NULL)
+	{
+		/* File doesn't exist*/
+		return (curr_proc->errcode = -ENOENT);
+	}
+
+	ino_data = inode_disk_get(ip);
+
+	/* Block special file. */
+	if (S_ISBLK(ino_data->i_mode))
+	{
+		rdev = inode_get_dev(ip);
+		if (bdev_open(ino_data->i_zones[0]) < 0)
+			goto error;
+	}
+
+	/* Directory. */
+	else if (S_ISDIR(ino_data->i_mode))
+	{
+		curr_proc->errcode = -ENOTSUP;
+		goto error;
+	}
+
+	/* file stats */
+	/*TODO Update time related fields first */
+
+	/* write stats in buf */
+	buf->st_dev = inode_get_dev(ip);
+	buf->st_ino = inode_get_num(ip);
+	buf->st_mode = ino_data->i_mode;
+	buf->st_nlink = ino_data->i_nlinks;
+	buf->st_uid = ino_data->i_uid;
+	buf->st_gid = ino_data->i_gid;
+	buf->st_rdev = rdev;
+	buf->st_size = ino_data->i_size;
+	buf->st_blksize = NANVIX_FS_BLOCK_SIZE;
+	buf->st_blocks = file_block_count(ip);
+
+	inode_put(&fs_root, ip);
+	return 0;
+
+error:
+	inode_put(&fs_root, ip);
+	return curr_proc->errcode;
+}
+
+/**
+ * The fs_stat() function returns information about the file
+ * named @p filename.
+ */
+int fs_stat(const char *filename, struct nanvix_stat *restrict buf)
+{
+	int fd;           /* File Descriptor      */
+	struct file *f;   /* File                 */
+
+	/* Get a free file descriptor. */
+	if ((fd = getfildes()) < 0)
+		return -EMFILE;
+
+	/* Grab a free entry in the file table. */
+	if ((f = getfile()) == NULL)
+		return -ENFILE;
+
+	/* Increment reference count before actually opening
+	 * the file because we can sleep below and another process
+	 * may want to use this file table entry also.  */
+	f->count = 1;
+
+	/* Get file stat. */
+	if (do_stat(filename, buf) != 0)
+	{
+		f->count = 0;
+		return curr_proc->errcode;
+	}
+
+	/* free file entry */
+	f->count = 0;
+
+	return 0;
 }
 
 /*============================================================================*
@@ -253,8 +652,13 @@ int fs_close(int fd)
 	}
 
 	/* Regular file. */
-	else if (S_ISREG(inode_disk_get(ip)->i_mode))
-		return (curr_proc->errcode = -ENOTSUP);
+	else if (S_ISREG(inode_disk_get(ip)->i_mode)) {
+		/* Inode is used by others */
+		if (inode_get_count(ip) > 1) {
+			inode_decrease_count(ip);
+			return (0);
+		}
+	}
 
 	/* Directory. */
 	else if (S_ISDIR(inode_disk_get(ip)->i_mode))
@@ -265,6 +669,95 @@ int fs_close(int fd)
 		return (curr_proc->errcode = -ENOTSUP);
 
 	return (inode_put(&fs_root, ip));
+}
+
+/*============================================================================*
+ * fs_unlink()                                                                *
+ *============================================================================*/
+
+int do_unlink(const char *filename)
+{
+	int ret = 0;       /* return value    */
+	struct inode *dip; /* directory inode */
+
+	/*TODO get parent directory inode */
+	dip = inode_get(&fs_root, inode_get_num(curr_proc->pwd));
+
+	/* remove from region table */
+	ret = minix_dirent_remove(
+			fs_root.dev,
+			&(fs_root.super->data),
+			fs_root.super->bmap,
+			inode_disk_get(dip),
+			filename
+		);
+
+
+	if (ret < 0)
+		goto error;
+
+	inode_touch(dip);
+	inode_put(&fs_root, dip);
+
+	return (0);
+
+error:
+	inode_put(&fs_root, dip);
+	return ret;
+}
+
+/**
+ * @brief Unlink a file from it's directory
+ *
+ * @param filename: path of the file to be unlinked
+ */
+int fs_unlink(const char *filename)
+{
+	int ret = 0;            /* return value           */
+	struct inode *fip;      /* file inode             */
+
+	if (filename == NULL)
+		return (-EINVAL);
+
+	/* get file inode */
+	if ((fip = inode_name(&fs_root, filename)) == NULL) {
+		return (-ENOENT);
+	}
+
+	/* unlinking current directory */
+	if (inode_get_num(fip) == inode_get_num(curr_proc->pwd)) {
+		ret = (-EINVAL);
+		goto error;
+	}
+
+	/* unlink directory */
+	if (S_ISDIR(inode_disk_get(fip)->i_mode)) {
+
+		/* TODO use real uid of process owner */
+		if (!IS_SUPERUSER(NANVIX_ROOT_UID)) {
+			ret = (-EACCES);
+			goto error;
+		}
+
+		/* not empty */
+		if (inode_disk_get(fip)->i_size) {
+			ret = (-EBUSY);
+			goto error;
+		}
+	}
+
+	if ((ret = do_unlink(filename)) != 0)
+		goto error;
+
+	/* decrement file link count */
+	inode_decrease_count(fip);
+
+	inode_put(&fs_root, fip);
+
+	return (0);
+error:
+	inode_put(&fs_root, fip);
+	return (ret);
 }
 
 /*============================================================================*
@@ -485,6 +978,13 @@ int fs_mount(struct filesystem *fs, dev_t dev)
 		goto error0;
 
 	/* Get reference root inode. */
+	if ((fs->root = inode_get(fs, MINIX_INODE_ROOT)) == NULL)
+	{
+		curr_proc->errcode = -ENOMEM;
+		goto error1;
+	}
+
+	/* double get on root to keep it available */
 	if ((fs->root = inode_get(fs, MINIX_INODE_ROOT)) == NULL)
 	{
 		curr_proc->errcode = -ENOMEM;
