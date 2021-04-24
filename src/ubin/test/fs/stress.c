@@ -30,6 +30,7 @@
 #include <posix/errno.h>
 #include <posix/fcntl.h>
 #include <posix/unistd.h>
+#include <posix/stdlib.h>
 #include "../test.h"
 
 #ifdef __NANVIX_HAS_VFS_SERVER
@@ -50,6 +51,28 @@
 static char data[NANVIX_FS_BLOCK_SIZE];
 
 /*============================================================================*
+ * Stat                                                                       *
+ *============================================================================*/
+
+/**
+ * @brief Stress Test: Get File Stats
+ */
+static void test_stress_nanvix_vfs_stat(void)
+{
+	int fd;
+	struct nanvix_stat buffer;
+	const char *filename = "disk";
+
+	uassert((fd = nanvix_vfs_open(filename, O_RDONLY, 0)) >= 0);
+	for (int i = 0; i < TEST_NITERATIONS; i++)
+	{
+		uassert(nanvix_vfs_stat(filename, &buffer) >= 0);
+	}
+
+	uassert(nanvix_vfs_close(fd) == 0);
+}
+
+/*============================================================================*
  * Open/Close                                                                 *
  *============================================================================*/
 
@@ -63,20 +86,54 @@ static void test_stress_nanvix_vfs_open_close(void)
 
 	for (int i = 0; i < NANVIX_OPEN_MAX; i++)
 	{
-		uassert((fd = nanvix_vfs_open(filename, O_RDONLY)) >= 0);
+		uassert((fd = nanvix_vfs_open(filename, O_RDONLY, 0)) >= 0);
 		uassert(nanvix_vfs_close(fd) == 0);
 	}
 
 	for (int i = 0; i < NANVIX_OPEN_MAX; i++)
 	{
-		uassert((fd = nanvix_vfs_open(filename, O_WRONLY)) >= 0);
+		uassert((fd = nanvix_vfs_open(filename, O_WRONLY, 0)) >= 0);
 		uassert(nanvix_vfs_close(fd) == 0);
 	}
 
 	for (int i = 0; i < NANVIX_OPEN_MAX; i++)
 	{
-		uassert((fd = nanvix_vfs_open(filename, O_RDWR)) >= 0);
+		uassert((fd = nanvix_vfs_open(filename, O_RDWR, 0)) >= 0);
 		uassert(nanvix_vfs_close(fd) == 0);
+	}
+}
+
+/*============================================================================*
+ * Creat/Unlink                                                               *
+ *============================================================================*/
+
+/**
+ * @brief Stress Test: Creat/Unlink a File
+ */
+static void test_stress_nanvix_vfs_creat_unlink(void)
+{
+	int fd;
+	char *filename = "stress_file";
+
+	for (int i = 0; i < NANVIX_OPEN_MAX; i++)
+	{
+		uassert((fd = nanvix_vfs_open(filename, (O_WRONLY | O_CREAT), (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH))) >= 0);
+		uassert(nanvix_vfs_close(fd) == 0);
+		uassert(nanvix_vfs_unlink(filename) == 0);
+	}
+
+	for (int i = 0; i < NANVIX_OPEN_MAX; i++)
+	{
+		uassert((fd = nanvix_vfs_open(filename, (O_RDWR | O_CREAT), (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH))) >= 0);
+		uassert(nanvix_vfs_close(fd) == 0);
+		uassert(nanvix_vfs_unlink(filename) == 0);
+	}
+
+	for (int i = 0; i < NANVIX_OPEN_MAX; i++)
+	{
+		uassert((fd = nanvix_vfs_open(filename, (O_RDONLY | O_CREAT), (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH))) >= 0);
+		uassert(nanvix_vfs_close(fd) == 0);
+		uassert(nanvix_vfs_unlink(filename) == 0);
 	}
 }
 
@@ -92,7 +149,7 @@ static void test_stress_nanvix_vfs_seek(void)
 	int fd;
 	const char *filename = "disk";
 
-	uassert((fd = nanvix_vfs_open(filename, O_RDWR)) >= 0);
+	uassert((fd = nanvix_vfs_open(filename, O_RDWR, 0)) >= 0);
 
 	for (int i = 0; i < TEST_NITERATIONS; i++)
 	{
@@ -114,9 +171,12 @@ static void test_stress_nanvix_vfs_seek(void)
 static void test_stress_nanvix_vfs_read_write(void)
 {
 	int fd;
+	int nfd;
 	const char *filename = "disk";
+	const char *newfilename = "new_file";
 
-	uassert((fd = nanvix_vfs_open(filename, O_RDWR)) >= 0);
+	uassert((fd = nanvix_vfs_open(filename, O_RDWR, 0)) >= 0);
+	uassert((nfd = nanvix_vfs_open(newfilename, (O_CREAT | O_RDWR), (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH))) >= 0);
 
 	for (int i = 0; i < TEST_NITERATIONS; i++)
 	{
@@ -133,9 +193,25 @@ static void test_stress_nanvix_vfs_read_write(void)
 		/* Checksum. */
 		for (size_t j = 0; j < sizeof(data); j++)
 			uassert(data[j] == 1);
+
+		/* Write regular file */
+		umemset(data, 1, NANVIX_FS_BLOCK_SIZE);
+		uassert(nanvix_vfs_seek(nfd, TEST_FILE_OFFSET, SEEK_SET) >= 0);
+		uassert(nanvix_vfs_write(nfd, data, NANVIX_FS_BLOCK_SIZE) == NANVIX_FS_BLOCK_SIZE);
+
+		/* Read regular file */
+		umemset(data, 0, NANVIX_FS_BLOCK_SIZE);
+		uassert(nanvix_vfs_seek(nfd, TEST_FILE_OFFSET, SEEK_SET) >= 0);
+		uassert(nanvix_vfs_read(nfd, data, NANVIX_FS_BLOCK_SIZE) == NANVIX_FS_BLOCK_SIZE);
+
+		/* Checksum. */
+		for (size_t j = 0; j < sizeof(data); j++)
+			uassert(data[j] == 1);
 	}
 
 	uassert(nanvix_vfs_close(fd) == 0);
+	uassert(nanvix_vfs_close(nfd) == 0);
+	uassert(nanvix_vfs_unlink(newfilename) == 0);
 }
 
 /*============================================================================*
@@ -146,10 +222,12 @@ static void test_stress_nanvix_vfs_read_write(void)
  * @brief Virtual File System Tests
  */
 struct test tests_vfs_stress[] = {
-	{ test_stress_nanvix_vfs_open_close, "[vfs][stress] open/close" },
-	{ test_stress_nanvix_vfs_seek,       "[vfs][stress] seek      " },
-	{ test_stress_nanvix_vfs_read_write, "[vfs][stress] read/write" },
-	{ NULL,                            NULL                   },
+	{ test_stress_nanvix_vfs_open_close,   "[vfs][stress] open/close    " },
+	{ test_stress_nanvix_vfs_seek,         "[vfs][stress] seek          " },
+	{ test_stress_nanvix_vfs_read_write,   "[vfs][stress] read/write    " },
+	{ test_stress_nanvix_vfs_stat,         "[vfs][stress] stat          " },
+	{ test_stress_nanvix_vfs_creat_unlink, "[vfs][stress] creat/unlink  " },
+	{ NULL,                                NULL                           },
 };
 
 #endif
