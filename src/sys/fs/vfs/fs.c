@@ -25,7 +25,7 @@
 /* Must come first. */
 #define __VFS_SERVER
 
-#include <nanvix/config.h>
+#include <nanvix/pm.h>
 #include <nanvix/servers/vfs.h>
 #include <nanvix/servers/vfs/bcache.h>
 #include <nanvix/servers/vfs/inode.h>
@@ -143,7 +143,7 @@ static int getfildes(void)
  *============================================================================*/
 
 /**
- * @brief This function trucates the inode @p ip
+ * @brief This function truncates the inode @p ip
  * that exists under the filesystem @p fs
  *
  * @param fs: filesystem
@@ -186,7 +186,7 @@ void do_trucate(struct filesystem *fs, struct inode *ip)
 
 
 /**
- * @brief See do_trucate
+ * @brief See do_truncate
  */
 int fs_trucate(struct filesystem *fs, struct inode *ip)
 {
@@ -282,7 +282,7 @@ static struct inode *do_creat( const char *name, int oflag, mode_t mode)
 			return (NULL);
 		}
 
-		/* alocate inode and create dirent */
+		/* allocate inode and create dirent */
 
 		/* TODO: pass uid and gid instead of superuser */
 		if ((ip = inode_alloc(&fs_root, mode, NANVIX_ROOT_UID, NANVIX_ROOT_GID)) == NULL)
