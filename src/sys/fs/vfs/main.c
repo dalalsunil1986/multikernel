@@ -203,9 +203,10 @@ static int do_vfs_server_unlink(const struct vfs_message *request)
 {
 	int ret;
 	int disc; /* should disconnect */
-	int aux_conn = lookup(pid, port);
 	const int port = request->header.mailbox_port;
 	const nanvix_pid_t pid = request->header.source;
+
+	int aux_conn = lookup(pid, port);
 
 	disc = 0;
 
