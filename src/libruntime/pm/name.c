@@ -468,6 +468,14 @@ int nanvix_name_lookup(const char *name)
 	if ((ret = nanvix_name_is_valid(name)) < 0)
 		return (ret);
 
+	/* Local name? */
+	if (_local_address_lookup(name) >= 0)
+		return (knode_get_num());
+
+	/**
+	 * Proceeds with remote query procedure.
+	 */
+
 	/* Build operation header. */
 	message_header_build(&msg.header, NAME_LOOKUP);
 	ustrcpy(msg.op.lookup.name, name);
