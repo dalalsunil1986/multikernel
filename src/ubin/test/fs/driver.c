@@ -28,8 +28,9 @@
 
 /* Import definitions. */
 extern struct test tests_vfs_api[];
-extern struct test tests_vfs_stress[];
 extern struct test tests_vfs_fault[];
+extern struct test tests_vfs_stress[];
+extern struct test tests_vfs_benchmark[];
 
 /**
  * @todo TODO: provide a detailed description for this function.
@@ -37,6 +38,13 @@ extern struct test tests_vfs_fault[];
 void test_vfs(void)
 {
 #ifdef __NANVIX_HAS_VFS_SERVER
+
+	/* Run benchmark tests. */
+	for (int i = 0; tests_vfs_benchmark[i].test_fn != NULL; i++)
+	{
+		uprintf("[nanvix][test][vfs][api] %s", tests_vfs_benchmark[i].name);
+		tests_vfs_benchmark[i].test_fn();
+	}
 
 	/* Run api tests. */
 	for (int i = 0; tests_vfs_api[i].test_fn != NULL; i++)
