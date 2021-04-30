@@ -68,37 +68,35 @@ static char data[NANVIX_FS_BLOCK_SIZE];
 static void benchmark_nanvix_vfs_open_close(void)
 {
 	int fd;
-	uint64_t time_lookup;
+	uint64_t t1;
+	uint64_t t2;
 	const char *filename = "disk";
 
 	for (int i=0; i < N_ITERATIONS + WARMUP; ++i) {
-		perf_start(0, PERF_CYCLES);
+		t1 = clock_read();
 		uassert((fd = nanvix_vfs_open(filename, O_RDONLY, 0)) >= 0);
 		uassert(nanvix_vfs_close(fd) == 0);
-		perf_stop(0);
-		time_lookup = perf_read(0);
+		t2 = clock_read();
 		if (i > WARMUP)
-			uprintf("[benchmarks][open/close read only] %l", time_lookup);
+			uprintf("[benchmarks][open/close read only] %l", (t2 - t1));
 	}
 
 	for (int i=0; i < N_ITERATIONS + WARMUP; ++i) {
-		perf_start(0, PERF_CYCLES);
+		t1 = clock_read();
 		uassert((fd = nanvix_vfs_open(filename, O_WRONLY, 0)) >= 0);
 		uassert(nanvix_vfs_close(fd) == 0);
-		perf_stop(0);
-		time_lookup = perf_read(0);
+		t2 = clock_read();
 		if (i > WARMUP)
-			uprintf("[benchmarks][open/close write only] %l", time_lookup);
+			uprintf("[benchmarks][open/close write only] %l", (t2 - t1));
 	}
 
 	for (int i=0; i < N_ITERATIONS + WARMUP; ++i) {
-		perf_start(0, PERF_CYCLES);
+		t1 = clock_read();
 		uassert((fd = nanvix_vfs_open(filename, O_RDWR, 0)) >= 0);
 		uassert(nanvix_vfs_close(fd) == 0);
-		perf_stop(0);
-		time_lookup = perf_read(0);
+		t2 = clock_read();
 		if (i > WARMUP)
-			uprintf("[benchmarks][open/close read write] %l", time_lookup);
+			uprintf("[benchmarks][open/close read write] %l", (t2 - t1));
 	}
 }
 
@@ -111,19 +109,19 @@ static void benchmark_nanvix_vfs_open_close(void)
  */
 static void benchmark_nanvix_stat(void)
 {
-	uint64_t time_lookup;
+	uint64_t t1;
+	uint64_t t2;
 	struct nanvix_stat buffer;
 	const char *filename = "disk";
 
 	for (int i=0; i < N_ITERATIONS + WARMUP; ++i) {
-		perf_start(0, PERF_CYCLES);
+		t1 = clock_read();
 
 		uassert((nanvix_vfs_stat(filename, &buffer)) >= 0);
 
-		perf_stop(0);
-		time_lookup = perf_read(0);
+		t2 = clock_read();
 		if (i > WARMUP)
-			uprintf("[benchmarks][stat file] %l", time_lookup);
+			uprintf("[benchmarks][stat file] %l", (t2 - t1));
 	}
 }
 
@@ -137,36 +135,34 @@ static void benchmark_nanvix_stat(void)
 static void benchmark_nanvix_vfs_seek(void)
 {
 	int fd;
-	uint64_t time_lookup;
+	uint64_t t1;
+	uint64_t t2;
 	const char *filename = "disk";
 
 	uassert((fd = nanvix_vfs_open(filename, O_RDWR, 0)) >= 0);
 
 	for (int i=0; i < N_ITERATIONS + WARMUP; ++i) {
-		perf_start(0, PERF_CYCLES);
+		t1 = clock_read();
 		uassert(nanvix_vfs_seek(fd, NANVIX_FS_BLOCK_SIZE, SEEK_CUR) >= 0);
-		perf_stop(0);
-		time_lookup = perf_read(0);
+		t2 = clock_read();
 		if (i > WARMUP)
-			uprintf("[benchmarks][seek cur] %l", time_lookup);
+			uprintf("[benchmarks][seek cur] %l", (t2 - t1));
 	}
 
 	for (int i=0; i < N_ITERATIONS + WARMUP; ++i) {
-		perf_start(0, PERF_CYCLES);
+		t1 = clock_read();
 		uassert(nanvix_vfs_seek(fd, 0, SEEK_END) >= 0);
-		perf_stop(0);
-		time_lookup = perf_read(0);
+		t2 = clock_read();
 		if (i > WARMUP)
-			uprintf("[benchmarks][seek end] %l", time_lookup);
+			uprintf("[benchmarks][seek end] %l", (t2 - t1));
 	}
 
 	for (int i=0; i < N_ITERATIONS + WARMUP; ++i) {
-		perf_start(0, PERF_CYCLES);
+		t1 = clock_read();
 		uassert(nanvix_vfs_seek(fd, NANVIX_FS_BLOCK_SIZE , SEEK_SET) >= 0);
-		perf_stop(0);
-		time_lookup = perf_read(0);
+		t2 = clock_read();
 		if (i > WARMUP)
-			uprintf("[benchmarks][seek set] %l", time_lookup);
+			uprintf("[benchmarks][seek set] %l", (t2 - t1));
 	}
 
 	uassert(nanvix_vfs_close(fd) == 0);
@@ -182,7 +178,8 @@ static void benchmark_nanvix_vfs_seek(void)
 static void benchmark_nanvix_vfs_read_write(void)
 {
 	int fd;
-	uint64_t time_lookup;
+	uint64_t t1;
+	uint64_t t2;
 	const char *filename = "disk";
 	const char *regfilename = "rdwr_file";
 
@@ -194,28 +191,26 @@ static void benchmark_nanvix_vfs_read_write(void)
 		umemset(data, 1, NANVIX_FS_BLOCK_SIZE);
 		uassert(nanvix_vfs_seek(fd, TEST_FILE_OFFSET, SEEK_SET) >= 0);
 		for (int j=0; j < N_ITERATIONS + WARMUP; ++j) {
-			perf_start(0, PERF_CYCLES);
+			t1 = clock_read();
 			uassert(nanvix_vfs_write(fd, data, i) == i);
-			perf_stop(0);
-			time_lookup = perf_read(0);
+			t2 = clock_read();
 			if (j > WARMUP)
-				uprintf("[benchmarks][blk file write (%d bytes)] %l", i, time_lookup);
+				uprintf("[benchmarks][blk file write (%d bytes)] %l", i, (t2 - t1));
 		}
 
 		/* Read. */
 		umemset(data, 0, NANVIX_FS_BLOCK_SIZE);
 		uassert(nanvix_vfs_seek(fd, TEST_FILE_OFFSET, SEEK_SET) >= 0);
 		for (int j=0; j < N_ITERATIONS + WARMUP; ++j) {
-			perf_start(0, PERF_CYCLES);
+			t1 = clock_read();
 			uassert(nanvix_vfs_read(fd, data, i) == i);
-			perf_stop(0);
-			time_lookup = perf_read(0);
+			t2 = clock_read();
 			if (j > WARMUP)
-				uprintf("[benchmarks][blk file read (%d bytes)] %l", i,time_lookup);
+				uprintf("[benchmarks][blk file read (%d bytes)] %l", i,(t2 - t1));
 		}
 
 		/* Checksum. */
-		for (size_t j = 0; j < sizeof(data); j++)
+		for (size_t j = 0; j < (size_t)i && j < sizeof(data); j++)
 			uassert(data[j] == 1);
 	}
 
@@ -229,28 +224,26 @@ static void benchmark_nanvix_vfs_read_write(void)
 		umemset(data, 1, NANVIX_FS_BLOCK_SIZE);
 		uassert(nanvix_vfs_seek(fd, TEST_FILE_OFFSET, SEEK_SET) >= 0);
 		for (int j=0; j < N_ITERATIONS + WARMUP; ++j) {
-			perf_start(0, PERF_CYCLES);
+			t1 = clock_read();
 			uassert(nanvix_vfs_write(fd, data, i) == i);
-			perf_stop(0);
-			time_lookup = perf_read(0);
+			t2 = clock_read();
 			if (j > WARMUP)
-				uprintf("[benchmarks][reg file write (%d bytes)] %l", i, time_lookup);
+				uprintf("[benchmarks][reg file write (%d bytes)] %l", i, (t2 - t1));
 		}
 
 		/* Read. */
 		umemset(data, 0, NANVIX_FS_BLOCK_SIZE);
 		uassert(nanvix_vfs_seek(fd, TEST_FILE_OFFSET, SEEK_SET) >= 0);
 		for (int j=0; j < N_ITERATIONS + WARMUP; ++j) {
-			perf_start(0, PERF_CYCLES);
+			t1 = clock_read();
 			uassert(nanvix_vfs_read(fd, data, i) == i);
-			perf_stop(0);
-			time_lookup = perf_read(0);
+			t2 = clock_read();
 			if (j > WARMUP)
-				uprintf("[benchmarks][reg file read (%d bytes)] %l", i, time_lookup);
+				uprintf("[benchmarks][reg file read (%d bytes)] %l", i, (t2 - t1));
 		}
 
 		/* Checksum. */
-		for (size_t j = 0; j < sizeof(data); j++)
+		for (size_t j = 0; j < (size_t)i && j < sizeof(data); j++)
 			uassert(data[j] == 1);
 
 	}
@@ -264,29 +257,28 @@ static void benchmark_nanvix_vfs_read_write(void)
 static void benchmark_nanvix_vfs_creat_unlink(void)
 {
 	int fd;
-	uint64_t time_lookup;
+	uint64_t t1;
+	uint64_t t2;
 	const char *filename = "new_file";
 
 	for (int i=0; i < N_ITERATIONS + WARMUP; ++i) {
-		perf_start(0, PERF_CYCLES);
+		t1 = clock_read();
 
 		uassert((fd = nanvix_vfs_open(filename, (O_CREAT | O_WRONLY), (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH))) >= 0);
 
-		perf_stop(0);
-		time_lookup = perf_read(0);
+		t2 = clock_read();
 		if (i > WARMUP)
-			uprintf("[benchmarks][create file] %l", time_lookup);
+			uprintf("[benchmarks][create file] %l", (t2 - t1));
 
 		uassert(nanvix_vfs_close(fd) == 0);
 
-		perf_start(0, PERF_CYCLES);
+		t1 = clock_read();
 
 		uassert(nanvix_vfs_unlink(filename) == 0);
 
-		perf_stop(0);
-		time_lookup = perf_read(0);
+		t2 = clock_read();
 		if (i > WARMUP)
-			uprintf("[benchmarks][unlink file] %l", time_lookup);
+			uprintf("[benchmarks][unlink file] %l", (t2 - t1));
 	}
 
 }
