@@ -181,7 +181,7 @@ ssize_t file_read(struct inode *ip, void *buf, size_t n, off_t off)
 	}
 
 	/* invalid offset */
-	else if (off > inode_disk_get(ip)->i_size)
+	else if (off > (off_t) inode_disk_get(ip)->i_size)
 	{
 		return -EINVAL;
 	}
@@ -280,7 +280,7 @@ ssize_t file_write(struct inode *ip, void *buf, size_t n, off_t off)
 	}
 
 	/* invalid offset */
-	else if (off > inode_disk_get(ip)->i_size)
+	else if (off > (off_t) inode_disk_get(ip)->i_size)
 	{
 		return -EINVAL;
 	}
