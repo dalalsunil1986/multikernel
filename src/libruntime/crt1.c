@@ -32,8 +32,32 @@
  */
 extern int __main3(int argc, const char *argv[]);
 
+
+#if __NANVIX_USES_LWMPI
+
+	extern int __main_wrapper(int argc, const char *argv[]);
+
+	/**
+	 * Routine that prepare the MPI Runtime environment.
+	 */
+	extern int __mpi_processes_init(int(*fn)(int, const char *[]), int argc, const char *argv[]);
+
+	/**
+	 * Routine that cleanup the MPI Runtime environment.
+	 */
+	extern int __mpi_processes_finalize(void);
+
+#else
+
+	static inline int __main_wrapper(int argc, const char *argv[]) {
+		return (__main3(argc, argv));
+	}
+
+#endif
+
+
 /**
- * @brief Entry point for user-level prgraom.
+ * @brief Entry point for user-level program.
  */
 int __main2(int argc, const char *argv[])
 {
@@ -52,9 +76,28 @@ int __main2(int argc, const char *argv[])
 		__runtime_setup(SPAWN_RING_LAST);
 
 		uassert(nanvix_setpname(pname) == 0);
+
+		/* Spawn multiple threads simulating user processes. */
+#if __NANVIX_USES_LWMPI
+
+		uprintf("INITIALIZING MPI USER PROCESSES");
+
+		uassert(__mpi_processes_init(&__main3, argc, argv) == 0);
+
+#endif
+
 		uassert(stdsync_fence() == 0);
 
-		__main3(argc, argv);
+		__main_wrapper(argc, argv);
+
+		/* Join the user processes. */
+#if __NANVIX_USES_LWMPI
+
+		uprintf("JOINING MPI USER PROCESSES");
+
+		uassert(__mpi_processes_finalize() == 0);
+
+#endif
 
 		uassert(nanvix_name_unlink(pname) == 0);
 		uassert(stdsync_fence() == 0);
