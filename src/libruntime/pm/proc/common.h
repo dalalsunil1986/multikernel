@@ -22,51 +22,33 @@
  * SOFTWARE.
  */
 
-#ifndef NANVIX_SERVERS_MESSAGE_H_
-#define NANVIX_SERVERS_MESSAGE_H_
 
-	#include <posix/stdint.h>
-	#include <nanvix/runtime/pm/proc.h>
+#include <nanvix/runtime/pm/proc.h>
 
 	/**
-	 * @brief Polymorphic message header.
+	 * @brief Mailbox for small messages.
 	 */
-	typedef struct
-	{
-		uint16_t source;      /**< Source cluster.  */
-		uint8_t opcode;       /**< Operation.       */
-		uint8_t mailbox_port; /**< Port Number      */
-		uint8_t portal_port;  /**< Port Number      */
-		nanvix_pid_t pid;     /**< Process id       */ 
-	} message_header;
+	extern int server;
 
 	/**
-	 * @brief Prints a message header in a string.
+	 * @brief Is the name service initialized ?
+	 */
+	extern bool initialized;
+
+	/**
+	 * @brief Process info
+	 */
+	extern nanvix_proc_info_t proc_info;
+	
+	/**
+	 * @brief Gets process info of a process by name or pid
 	 *
-	 * @param str Target string.
-	 * @param h   Target message header.
-	 */
-	extern void message_header_sprint(char *str, message_header *h);
-
-	/**
-	 * @brief Builds a message header.
+	 * @param name Target name.
+	 * @param pid  Target pid.
+	 * @param p    Target process info.
 	 *
-	 * @param h      Target message header.
-	 * @param opcode Opcode of the message.
+	 * @returns Upon successful completion the NoC node ID whose name is @p
+	 * name or pid is @p pid is returned. Upon failure, a negative error code is returned
+	 * instead.
 	 */
-	extern void message_header_build(message_header *h, uint8_t opcode);
-
-	/**
-	 * @brief Builds a message header.
-	 *
-	 * @param h           Target message header.
-	 * @param opcode      Opcode of the message.
-	 * @param portal_port Port number for portal.
-	 */
-	extern void message_header_build2(
-		message_header *h,
-		uint8_t opcode,
-		uint8_t portal_port
-	);
-
-#endif /* NANVIX_SERVERS_MESSAGE_H_ */
+	extern int __nanvix_name_lookup(nanvix_pid_t pid, const char *name, nanvix_proc_info_t *proc_info);

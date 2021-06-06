@@ -119,9 +119,10 @@ static inline int nanvix_mailbox_is_valid(int mbxid)
  */
 int nanvix_mailbox_create(const char *name)
 {
-	int fd;      /* NoC connector. */
-	int nodenum; /* NoC node.      */
-	int mbxid;   /* ID of mailbix. */
+	int fd;           /* NoC connector. */
+	int nodenum;      /* NoC node.      */
+	int mbxid;        /* ID of mailbix. */
+	nanvix_pid_t pid; /* Process id.    */
 
 	/* Invalid name. */
 	if (name == NULL)
@@ -139,10 +140,14 @@ int nanvix_mailbox_create(const char *name)
 	if ((mbxid = resource_alloc(&pool_mailboxes)) < 0)
 		return (-EAGAIN);
 
-	nodenum = knode_get_num();
+	pid = nanvix_getpid();
+
+	/* Find nodenum */
+	if ((nodenum = nanvix_name_lookup2(pid)) < 0)
+		goto error0;
 
 	/* Link name. */
-	if (nanvix_name_link(nodenum, name) != 0)
+	if (nanvix_name_link(pid, name) != 0)
 		goto error0;
 
 	/* Initialize mailbox. */
@@ -172,9 +177,10 @@ error0:
  */
 int nanvix_mailbox_create2(const char *name, int port)
 {
-	int fd;      /* NoC connector. */
-	int nodenum; /* NoC node.      */
-	int mbxid;   /* ID of mailbox. */
+	int fd;           /* NoC connector. */
+	int nodenum;      /* NoC node.      */
+	int mbxid;        /* ID of mailbox. */
+	nanvix_pid_t pid; /* Process id.    */
 
 	/* Invalid name. */
 	if (name == NULL)
@@ -188,10 +194,14 @@ int nanvix_mailbox_create2(const char *name, int port)
 	if (!WITHIN(port, NANVIX_GENERAL_PORTS_BASE, MAILBOX_PORT_NR))
 		return (-EINVAL);
 
-	nodenum = knode_get_num();
-
 	/* Allocate mailbox. */
 	if ((mbxid = resource_alloc(&pool_mailboxes)) < 0)
+		return (-EAGAIN);
+
+	pid = nanvix_getpid();
+
+	/* Find nodenum */
+	if ((nodenum = nanvix_name_lookup2(pid)) < 0)
 		return (-EAGAIN);
 
 	/* Creates the underlying NoC connector. */
@@ -199,7 +209,7 @@ int nanvix_mailbox_create2(const char *name, int port)
 		goto error0;
 
 	/* Link name. */
-	if (nanvix_name_link(nodenum, name) != 0)
+	if (nanvix_name_link(pid, name) != 0)
 		goto error1;
 
 	/* Initialize mailbox. */

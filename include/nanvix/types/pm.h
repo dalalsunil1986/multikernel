@@ -55,7 +55,11 @@
 	/**
 	 * @brief Group's ID
 	 */
-	typedef gid_t nanvix_gid_t;
+	#ifndef __unix64__
+		typedef gid_t nanvix_gid_t;
+	#else
+		typedef pid_t nanvix_gid_t;
+	#endif
 
 	/**
 	 * @brief Creator's ID

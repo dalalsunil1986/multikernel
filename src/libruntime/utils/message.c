@@ -24,6 +24,7 @@
 
 #include <nanvix/servers/message.h>
 #include <nanvix/runtime/stdikc.h>
+#include <nanvix/runtime/pm/proc.h>
 #include <nanvix/sys/noc.h>
 #include <posix/stdint.h>
 #include <nanvix/ulib.h>
@@ -40,6 +41,7 @@ void message_header_sprint(char *str, message_header *h)
 
 	usprintf(str, fmt,
 		h->source,
+		h->pid,
 		h->mailbox_port,
 		h->portal_port,
 		h->opcode
@@ -59,6 +61,7 @@ void message_header_build2(
 	uassert(h != NULL);
 
 	h->source = knode_get_num();
+	h->pid = nanvix_getpid();
 	h->opcode = opcode;
 	h->mailbox_port = stdinbox_get_port();
 	h->portal_port = portal_port;

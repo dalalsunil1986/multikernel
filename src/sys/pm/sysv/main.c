@@ -763,6 +763,7 @@ static int do_sysv_server_loop(void)
 static int do_sysv_server_startup(struct nanvix_semaphore *lock)
 {
 	int ret;
+	nanvix_pid_t pid;
 
 	uprintf("[nanvix][sysv] booting up server");
 
@@ -770,8 +771,11 @@ static int do_sysv_server_startup(struct nanvix_semaphore *lock)
 	server.inbox = stdinbox_get();
 	server.inportal = stdinportal_get();
 
+	if ((pid = nanvix_getpid()) == NANVIX_PID_NULL)
+		return (-1);
+
 	/* Link name. */
-	if ((ret = nanvix_name_link(server.nodenum, server.name)) < 0)
+	if ((ret = nanvix_name_link(pid, server.name)) < 0)
 		return (ret);
 
 	connections_setup();

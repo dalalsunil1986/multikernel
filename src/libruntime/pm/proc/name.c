@@ -32,60 +32,8 @@
 #include <nanvix/ulib.h>
 #include <posix/errno.h>
 #include <posix/stdbool.h>
+#include "common.h"
 
-/**
- * @brief Mailbox for small messages.
- */
-static int server;
-
-/**
- * @brief Is the name service initialized ?
- */
-static bool initialized = false;
-
-/*============================================================================*
- * __nanvix_name_setup()                                                      *
- *============================================================================*/
-
-/**
- * @todo TODO: provide a detailed description for this function.
- */
-int __nanvix_name_setup(void)
-{
-	/* Nothing to do. */
-	if (initialized)
-		return (0);
-
-	/* Open connection with Name Server. */
-	if ((server = kmailbox_open(NAME_SERVER_NODE, NAME_SERVER_PORT_NUM)) < 0)
-		return (-1);
-
-	initialized = true;
-
-	return (0);
-}
-
-/*============================================================================*
- * nanvix_name_cleanup()                                                      *
- *============================================================================*/
-
-/**
- * @todo TODO: provide a detailed description for this function.
- */
-int __nanvix_name_cleanup(void)
-{
-	/* Nothing to do. */
-	if (!initialized)
-		return (0);
-
-	/* Close connection with Name Server. */
-	if (kmailbox_close(server) < 0)
-		return (-EAGAIN);
-
-	initialized = false;
-
-	return (0);
-}
 
 /*============================================================================*
  * nanvix_name_lookup()                                                       *
@@ -97,7 +45,7 @@ int __nanvix_name_cleanup(void)
 int nanvix_name_lookup(const char *name)
 {
 	int ret;
-	struct name_message msg;
+	nanvix_proc_info_t p;
 
 	/* Initilize name client. */
 	if (!initialized)
@@ -107,17 +55,10 @@ int nanvix_name_lookup(const char *name)
 	if ((ret = nanvix_name_is_valid(name)) < 0)
 		return (ret);
 
-	/* Build operation header. */
-	message_header_build(&msg.header, NAME_LOOKUP);
-	ustrcpy(msg.op.lookup.name, name);
-
-	if ((ret = kmailbox_write(server, &msg, sizeof(struct name_message))) != sizeof(struct name_message))
+	if ((ret = __nanvix_name_lookup(NANVIX_PID_NULL, name, &p)) < 0)
 		return (ret);
 
-	if ((ret = kmailbox_read(stdinbox_get(), &msg, sizeof(struct name_message))) != sizeof(struct name_message))
-		return (ret);
-
-	return (msg.op.ret.nodenum);
+	return (p.nodenum);
 }
 
 /*============================================================================*
@@ -127,7 +68,7 @@ int nanvix_name_lookup(const char *name)
 /**
  * @todo TODO: provide a detailed description for this function.
  */
-int nanvix_name_link(int nodenum, const char *name)
+int nanvix_name_link(nanvix_pid_t pid, const char *name)
 {
 	int ret;
 	struct name_message msg;
@@ -136,8 +77,8 @@ int nanvix_name_link(int nodenum, const char *name)
 	if (!initialized)
 		return (-EAGAIN);
 
-	/* Invalid NoC node ID. */
-	if (!proc_is_valid(nodenum))
+	/* Invalid pid. */
+	if (pid == NANVIX_PID_NULL)
 		return (-EINVAL);
 
 	/* Invalid name. */
@@ -147,6 +88,7 @@ int nanvix_name_link(int nodenum, const char *name)
 	/* Build operation header. */
 	message_header_build(&msg.header, NAME_LINK);
 	ustrcpy(msg.op.link.name, name);
+	msg.op.link.pid = pid;
 
 	if ((ret = kmailbox_write(server, &msg, sizeof(struct name_message))) != sizeof(struct name_message))
 		return (ret);
@@ -154,10 +96,10 @@ int nanvix_name_link(int nodenum, const char *name)
 	if ((ret = kmailbox_read(stdinbox_get(), &msg, sizeof(struct name_message))) != sizeof(struct name_message))
 		return (ret);
 
-	if (msg.header.opcode == NAME_SUCCESS)
-		return (0);
+	if (msg.header.opcode == NAME_FAIL)
+		return (msg.op.ret.errcode);
 
-	return (msg.op.ret.errcode);
+	return (0);
 }
 
 /*============================================================================*
@@ -190,10 +132,10 @@ int nanvix_name_unlink(const char *name)
 	if ((ret = kmailbox_read(stdinbox_get(), &msg, sizeof(struct name_message))) != sizeof(struct name_message))
 		return (ret);
 
-	if (msg.header.opcode == NAME_SUCCESS)
-		return (0);
+	if (msg.header.opcode == NAME_FAIL)
+		return (msg.op.ret.errcode);
 
-	return (msg.op.ret.errcode);
+	return (0);
 }
 
 /*============================================================================*

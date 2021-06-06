@@ -555,6 +555,7 @@ static int do_rmem_loop(void)
 static int do_rmem_startup(struct nanvix_semaphore *lock)
 {
 	int ret;
+	nanvix_pid_t pid;
 	const char *servername;
 
 	/* Messages should be small enough. */
@@ -599,7 +600,11 @@ static int do_rmem_startup(struct nanvix_semaphore *lock)
 
 	/* Link name. */
 	servername = rmem_server_get_name();
-	if ((ret = nanvix_name_link(nodenum, servername)) < 0)
+
+	if ((pid = nanvix_getpid()) == NANVIX_PID_NULL)
+		return (-1);
+
+	if ((ret = nanvix_name_link(pid, servername)) < 0)
 		return (ret);
 
 	/* Unblock spawner. */
