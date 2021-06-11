@@ -54,9 +54,24 @@
 #define WARMUP 5
 
 /**
+ * @brief Maximum byte size for read/write tests
+ */
+#define RW_BYTE_LIMIT 65536
+
+/**
+ * @brief Optimal size for read/write tests
+ */
+#define OPTIMAL_BYTE_N 4096
+
+/**
+ * @brief Maximum number of processes in read/write tests
+ */
+#define MAX_PROCESSES 8
+
+/**
  * @brief Buffer for Read/Write Tests
  */
-static char data[NANVIX_FS_BLOCK_SIZE];
+static char *data;
 
 /*============================================================================*
  * Open/Close                                                                 *
@@ -183,12 +198,13 @@ static void benchmark_nanvix_vfs_read_write(void)
 	const char *filename = "disk";
 	const char *regfilename = "rdwr_file";
 
+	data = nanvix_malloc(RW_BYTE_LIMIT);
 	uassert((fd = nanvix_vfs_open(filename, O_RDWR, 0)) >= 0);
 
 	/* i is # of bytes to read/write and doubles each iteration */
-	for (int i=1; i<=NANVIX_FS_BLOCK_SIZE; i*=2) {
+	for (int i=256; i<=RW_BYTE_LIMIT; i*=2) {
 		/* Write */
-		umemset(data, 1, NANVIX_FS_BLOCK_SIZE);
+		umemset(data, 1, RW_BYTE_LIMIT);
 		uassert(nanvix_vfs_seek(fd, TEST_FILE_OFFSET, SEEK_SET) >= 0);
 		for (int j=0; j < N_ITERATIONS + WARMUP; ++j) {
 			t1 = clock_read();
@@ -199,7 +215,7 @@ static void benchmark_nanvix_vfs_read_write(void)
 		}
 
 		/* Read. */
-		umemset(data, 0, NANVIX_FS_BLOCK_SIZE);
+		umemset(data, 0, RW_BYTE_LIMIT);
 		uassert(nanvix_vfs_seek(fd, TEST_FILE_OFFSET, SEEK_SET) >= 0);
 		for (int j=0; j < N_ITERATIONS + WARMUP; ++j) {
 			t1 = clock_read();
@@ -219,9 +235,9 @@ static void benchmark_nanvix_vfs_read_write(void)
 	/* Regular file */
 	uassert((fd = nanvix_vfs_open(regfilename, (O_RDWR | O_CREAT),
 					(S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH))) >= 0);
-	for (int i=1; i<=NANVIX_FS_BLOCK_SIZE; i*=2) {
+	for (int i=256; i<=RW_BYTE_LIMIT; i*=2) {
 		/* Write */
-		umemset(data, 1, NANVIX_FS_BLOCK_SIZE);
+		umemset(data, 1, RW_BYTE_LIMIT);
 		uassert(nanvix_vfs_seek(fd, TEST_FILE_OFFSET, SEEK_SET) >= 0);
 		for (int j=0; j < N_ITERATIONS + WARMUP; ++j) {
 			t1 = clock_read();
@@ -232,7 +248,7 @@ static void benchmark_nanvix_vfs_read_write(void)
 		}
 
 		/* Read. */
-		umemset(data, 0, NANVIX_FS_BLOCK_SIZE);
+		umemset(data, 0, RW_BYTE_LIMIT);
 		uassert(nanvix_vfs_seek(fd, TEST_FILE_OFFSET, SEEK_SET) >= 0);
 		for (int j=0; j < N_ITERATIONS + WARMUP; ++j) {
 			t1 = clock_read();
@@ -249,6 +265,56 @@ static void benchmark_nanvix_vfs_read_write(void)
 	}
 	uassert(nanvix_vfs_close(fd) == 0);
 	uassert(nanvix_vfs_unlink(regfilename) == 0);
+	nanvix_free(data);
+}
+
+/**
+ * @brief Benchmark Test: Read/Write from/to a File with fixed buffer size in OPTIMAL_BYTE_N
+ */
+static void benchmark_nanvix_vfs_rw_optimal(void)
+{
+	int fd;
+	uint64_t t1;
+	uint64_t t2;
+	char *regfilename = nanvix_malloc(sizeof(char) * 10);
+
+	/* random file number suffix so each process reads/writes to/from a different file */
+	usprintf(regfilename, "rw_file%d", knode_get_num());
+
+	data = nanvix_malloc(OPTIMAL_BYTE_N);
+
+	/* Regular file */
+	uassert((fd = nanvix_vfs_open(regfilename, (O_RDWR | O_CREAT),
+					(S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH))) >= 0);
+	uprintf("RANDOM NAME: %s %d", regfilename, fd);
+
+	/* Write */
+	umemset(data, 1, RW_BYTE_LIMIT);
+	for (int j=0; j < N_ITERATIONS + WARMUP; ++j) {
+		t1 = clock_read();
+		uassert(nanvix_vfs_write(fd, data, OPTIMAL_BYTE_N) == OPTIMAL_BYTE_N);
+		t2 = clock_read();
+		if (j > WARMUP)
+			uprintf("[benchmarks][reg file write (%d bytes)] %l", OPTIMAL_BYTE_N, (t2 - t1));
+	}
+
+	/* Read. */
+	umemset(data, 0, RW_BYTE_LIMIT);
+	for (int j=0; j < N_ITERATIONS + WARMUP; ++j) {
+		t1 = clock_read();
+		uassert(nanvix_vfs_read(fd, data, OPTIMAL_BYTE_N) == OPTIMAL_BYTE_N);
+		t2 = clock_read();
+		if (j > WARMUP)
+			uprintf("[benchmarks][reg file read (%d bytes)] %l", OPTIMAL_BYTE_N, (t2 - t1));
+	}
+
+	/* Checksum. */
+	for (size_t j = 0; j < sizeof(data); j++)
+		uassert(data[j] == 1);
+
+	uassert(nanvix_vfs_close(fd) == 0);
+	uassert(nanvix_vfs_unlink(regfilename) == 0);
+	nanvix_free(data);
 }
 
 /**
@@ -291,12 +357,13 @@ static void benchmark_nanvix_vfs_creat_unlink(void)
  * @brief Virtual File System Tests
  */
 struct test tests_vfs_benchmark[] = {
-	{ benchmark_nanvix_vfs_open_close,   "[vfs][benchmark] open/close  " },
-	{ benchmark_nanvix_vfs_seek,         "[vfs][benchmark] seek        " },
-	{ benchmark_nanvix_vfs_read_write,   "[vfs][benchmark] read/write  " },
-	{ benchmark_nanvix_stat,             "[vfs][benchmark] stat        " },
-	{ benchmark_nanvix_vfs_creat_unlink, "[vfs][benchmark] creat/unlink" },
-	{ NULL,                            NULL                            },
+	{ benchmark_nanvix_vfs_open_close,   "[vfs][benchmark] open/close        " },
+	{ benchmark_nanvix_vfs_seek,         "[vfs][benchmark] seek              " },
+	{ benchmark_nanvix_vfs_read_write,   "[vfs][benchmark] read/write        " },
+	{ benchmark_nanvix_vfs_rw_optimal,   "[vfs][benchmark] read/write optimal" },
+	{ benchmark_nanvix_stat,             "[vfs][benchmark] stat              " },
+	{ benchmark_nanvix_vfs_creat_unlink, "[vfs][benchmark] creat/unlink      " },
+	{ NULL,                            NULL                                    },
 };
 
 #endif

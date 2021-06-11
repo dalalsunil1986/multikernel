@@ -144,7 +144,6 @@ static int do_vfs_server_open(
 	}
 
 	response->op.ret.fd = ret;
-
 	return (0);
 }
 

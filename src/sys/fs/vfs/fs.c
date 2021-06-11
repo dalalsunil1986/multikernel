@@ -416,6 +416,7 @@ int fs_open(const char *filename, int oflag, mode_t mode)
 	f->inode = i;
 
 	curr_proc->ofiles[fd] = f;
+
 	return (fd);
 }
 

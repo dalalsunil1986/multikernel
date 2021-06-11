@@ -62,7 +62,7 @@ int lookup(nanvix_pid_t remote, int port)
 		if ((connections[i].remote == remote) && (connections[i].port == port))
 			return (i);
 	}
-	
+
 	return (-ENOENT);
 }
 
@@ -108,7 +108,6 @@ int connect(nanvix_pid_t remote, int port)
 out:
 
 	connections[i].count++;
-	
 	return (0);
 }
 
@@ -139,7 +138,7 @@ int disconnect(nanvix_pid_t remote, int port)
 	/* Unlink remote. */
 	if (connections[i].count-- == 1)
 		connections[i].remote = -1;
-	
+
 	return (0);
 }
 
@@ -170,7 +169,7 @@ int get_connections(struct connection *buf)
 
 		umemcpy(&buf[count++], &connections[i], sizeof(struct connection));
 	}
-	
+
 	return (count);
 }
 
